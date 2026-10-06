@@ -153,8 +153,28 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    let cleanRoomCode = roomCode.trim().toUpperCase().replace(/\s+/g, '-');
-    if (!cleanRoomCode.startsWith('MATCH-') && /^[A-Z0-9]{4,6}$/.test(cleanRoomCode)) {
+    let rawRoomCode = roomCode.trim();
+    
+    // Extract room code if user pasted the full invite URL
+    try {
+      if (rawRoomCode.startsWith('http')) {
+        const url = new URL(rawRoomCode);
+        const codeParam = url.searchParams.get('room');
+        if (codeParam) {
+          rawRoomCode = codeParam;
+        }
+      }
+    } catch {
+      // ignore parsing errors
+    }
+
+    let cleanRoomCode = rawRoomCode.toUpperCase().replace(/\s+/g, '-');
+    
+    // Try to extract MATCH-XXXX from messy text
+    const match = cleanRoomCode.match(/(MATCH-[A-Z0-9]+)/);
+    if (match) {
+      cleanRoomCode = match[1];
+    } else if (!cleanRoomCode.startsWith('MATCH-') && /^[A-Z0-9]{4,6}$/.test(cleanRoomCode)) {
       cleanRoomCode = `MATCH-${cleanRoomCode}`;
     }
 
@@ -169,6 +189,20 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
     sound.playButtonClick();
 
     try {
+      // Validate Room Code first
+      const roomRes = await fetch('/api/validate-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: cleanRoomCode }),
+      });
+      const roomData = await roomRes.json();
+      if (!roomData.valid) {
+        setErrorMessage(roomData.error || 'Invalid room code.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Then validate name
       const res = await fetch('/api/validate-name', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

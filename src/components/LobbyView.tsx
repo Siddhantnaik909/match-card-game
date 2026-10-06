@@ -53,7 +53,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   const copyInviteLink = () => {
     sound.playButtonClick();
-    navigator.clipboard.writeText(`${window.location.origin}?room=${room.roomCode}`);
+    navigator.clipboard.writeText(`${window.location.origin}/?room=${room.roomCode}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

@@ -60,6 +60,28 @@ async function startServer() {
     res.json({ leaderboard });
   });
 
+  app.post('/api/validate-room', (req: Request, res: Response) => {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (typeof body.roomCode === 'string') {
+      const room = gameEngine.getRoom(body.roomCode);
+      if (!room) {
+        res.json({ valid: false, error: 'Invalid room code. Please check and try again.' });
+        return;
+      }
+      if (room.isLocked || room.status !== 'lobby') {
+        res.json({ valid: false, error: 'Room is locked or game has already started.' });
+        return;
+      }
+      if (room.players.length >= room.settings.maxPlayers) {
+        res.json({ valid: false, error: `Room is full (Maximum ${room.settings.maxPlayers} players).` });
+        return;
+      }
+      res.json({ valid: true });
+      return;
+    }
+    res.status(400).json({ valid: false, error: 'Valid roomCode string required' });
+  });
+
   // 5. Admin Blocked Words Endpoints
   app.get('/api/admin/blocked-words', (_req: Request, res: Response) => {
     const words = nameFilter.getBlockedWords();

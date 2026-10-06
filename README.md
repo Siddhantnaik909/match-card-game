@@ -117,6 +117,28 @@ gcloud run services update match-and-collect \
 
 ---
 
+## Render Deployment
+
+This project includes a `render.yaml` configuration file for easy deployment via Render's Blueprint functionality.
+
+### 1. Blueprint Deployment (Recommended)
+1. Go to your Render Dashboard and click **New** -> **Blueprint**.
+2. Connect your GitHub repository.
+3. Render will automatically detect the `render.yaml` file and configure your Web Service.
+4. Click **Apply** to deploy the game.
+
+### 2. Manual Render Web Service Deployment
+If you prefer not to use the Blueprint:
+1. Go to your Render Dashboard and click **New** -> **Web Service**.
+2. Connect this repository.
+3. Use the following configuration:
+   - **Environment**: Node
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm start`
+4. Click **Create Web Service**. Render will automatically provision an SSL-secured endpoint and build the application.
+
+---
+
 ## Functional Walkthrough Test Cases
 
 1. **Room Creation & Safety Validation**:

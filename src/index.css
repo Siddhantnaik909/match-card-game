@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Animations for card passing and game interactions */
+@keyframes card-float-hero {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(0.5deg);
+  }
+}
+
+@keyframes card-float-left {
+  0%, 100% {
+    transform: translateY(0px) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(-7deg);
+  }
+}
+
+@keyframes card-float-right {
+  0%, 100% {
+    transform: translateY(0px) rotate(8deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(7deg);
+  }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+@keyframes ember-drift {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-30px) scale(0.8);
+    opacity: 0;
+  }
+}
+
+.animate-card-hero {
+  animation: card-float-hero 4s ease-in-out infinite;
+}
+
+.animate-card-left {
+  animation: card-float-left 4.5s ease-in-out infinite;
+}
+
+.animate-card-right {
+  animation: card-float-right 4.2s ease-in-out infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* 3D Perspective helper utilities */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.perspective-1400 {
+  perspective: 1400px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+/* 3D Gaming Extruded Button Style */
+.btn-game-3d {
+  position: relative;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 6px 0 #9a3412, 0 14px 28px rgba(245, 158, 11, 0.35);
+}
+.btn-game-3d:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 0 #9a3412, 0 18px 32px rgba(245, 158, 11, 0.45);
+}
+.btn-game-3d:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #9a3412, 0 6px 12px rgba(245, 158, 11, 0.25);
+}
+
+.btn-game-secondary {
+  position: relative;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 0 #1e293b, 0 10px 20px rgba(0, 0, 0, 0.4);
+}
+.btn-game-secondary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 0 #1e293b, 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+.btn-game-secondary:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #1e293b, 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Custom sleek dark scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0b101b;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}

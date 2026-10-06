@@ -1,0 +1,6 @@
+{
+  "name": "Match & Collect - Real-Time Multiplayer Office Game",
+  "description": "A fast real-time multiplayer office card game and Chor-Chitthi social party game for 4–30 players. Pass cards, match 4, and win together.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

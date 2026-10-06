@@ -157,38 +157,35 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    let rawRoomCode = roomCode.trim();
-    
-    // Extract room code if user pasted a URL with ?room=
-    const urlMatch = rawRoomCode.match(/[?&]room=([^&]+)/i);
-    if (urlMatch && urlMatch[1]) {
-      rawRoomCode = urlMatch[1];
+    let raw = roomCode.trim();
+
+    // If pasted a URL like https://...onrender.com/?room=MATCH-4GBX, extract ?room= value
+    const paramMatch = raw.match(/[?&]room=([^&\s]+)/i);
+    if (paramMatch) {
+      raw = paramMatch[1];
+    }
+
+    // Strip to only alphanumeric + dash, uppercase
+    const stripped = raw.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+
+    // Extract the code: either full MATCH-XXXX or just the 4-6 char part
+    let cleanRoomCode = '';
+    const fullMatch = stripped.match(/MATCH-([A-Z0-9]{4,6})/);
+    if (fullMatch) {
+      cleanRoomCode = `MATCH-${fullMatch[1]}`;
     } else {
-      // If they pasted a URL without ?room= but it has http, we ignore.
-      // But if they pasted just raw text, we keep it.
-      // To avoid matching "match-card-game" as "MATCH-CARD", let's remove the domain part if present
-      rawRoomCode = rawRoomCode.replace(/.*onrender\.com\/?/i, '');
+      // Just the suffix: e.g. "4GBX" or "4 G B X" → "4GBX"
+      const suffix = stripped.replace(/-/g, '');
+      if (/^[A-Z0-9]{4,6}$/.test(suffix)) {
+        cleanRoomCode = `MATCH-${suffix}`;
+      }
     }
 
-    let cleanRoomCode = rawRoomCode.toUpperCase().replace(/\s+/g, '-');
-    
-    // If they typed just 4 to 6 characters, prefix with MATCH-
-    if (!cleanRoomCode.startsWith('MATCH-') && /^[A-Z0-9]{4,6}$/.test(cleanRoomCode)) {
-      cleanRoomCode = `MATCH-${cleanRoomCode}`;
-    }
-
-    // Try to extract MATCH-XXXX from the remaining text.
-    // Use matchAll or just get the last match to avoid matching "MATCH-CARD" from the app name if they pasted some weird text.
-    const matches = Array.from(cleanRoomCode.matchAll(/MATCH-[A-Z0-9]{4,6}/g));
-    if (matches.length > 0) {
-      // Get the last match, which is most likely the actual room code (e.g. at the end of a URL)
-      cleanRoomCode = matches[matches.length - 1][0];
-    }
-
-    if (!cleanRoomCode || cleanRoomCode.length < 5) {
-      setErrorMessage('Please enter a valid room code (e.g. MATCH-8K29).');
+    if (!cleanRoomCode) {
+      setErrorMessage('Please enter a valid room code (e.g. MATCH-4GBX or just 4GBX).');
       return;
     }
+
 
     if (!validateName(displayName)) return;
 

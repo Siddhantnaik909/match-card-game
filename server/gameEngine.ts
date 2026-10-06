@@ -39,6 +39,24 @@ export interface InternalPlayer {
   disconnectTimer?: NodeJS.Timeout;
 }
 
+export interface InternalGlobalPlayer {
+  id: string;
+  sessionId: string;
+  displayName: string;
+  ws: WebSocket;
+  status: 'idle' | 'in-room';
+}
+
+export interface InternalPlayRequest {
+  id: string;
+  fromPlayerId: string;
+  fromPlayerName: string;
+  targetPlayerId: string;
+  roomCode: string;
+  gameMode: GameMode;
+  expiresAt: number;
+}
+
 export interface InternalRoom {
   id: string;
   roomCode: string;
@@ -71,6 +89,8 @@ export interface InternalRoom {
 export class GameEngine {
   private rooms: Map<string, InternalRoom> = new Map(); // roomCode -> InternalRoom
   private sessionToRoom: Map<string, string> = new Map(); // sessionId -> roomCode
+  private globalPlayers: Map<string, InternalGlobalPlayer> = new Map(); // playerId -> InternalGlobalPlayer
+  private activeInvites: Map<string, InternalPlayRequest> = new Map(); // inviteId -> InternalPlayRequest
 
   constructor() {
     // Periodically clean up stale/abandoned rooms
@@ -89,6 +109,118 @@ export class GameEngine {
   private generateId(): string {
     return crypto.randomUUID();
   }
+
+  // --- GLOBAL PLAYER LOGIC ---
+
+  public registerGlobalPlayer(displayName: string, ws: WebSocket, clientSessionId?: string): { player: InternalGlobalPlayer } | { error: string } {
+    const val = nameFilter.validate(displayName);
+    if (!val.valid) {
+      return { error: val.error || 'Name Not Allowed' };
+    }
+
+    const playerId = this.generateId();
+    const sessionId = clientSessionId || this.generateId();
+    
+    const globalPlayer: InternalGlobalPlayer = {
+      id: playerId,
+      sessionId,
+      displayName: displayName.trim(),
+      ws,
+      status: 'idle',
+    };
+
+    this.globalPlayers.set(playerId, globalPlayer);
+    this.broadcastGlobalState();
+    return { player: globalPlayer };
+  }
+
+  public removeGlobalPlayer(ws: WebSocket): void {
+    for (const [id, player] of this.globalPlayers.entries()) {
+      if (player.ws === ws) {
+        this.globalPlayers.delete(id);
+        this.broadcastGlobalState();
+        break;
+      }
+    }
+  }
+
+  public updateGlobalPlayerStatus(playerId: string, status: 'idle' | 'in-room'): void {
+    const player = this.globalPlayers.get(playerId);
+    if (player) {
+      player.status = status;
+      this.broadcastGlobalState();
+    }
+  }
+
+  public broadcastGlobalState(): void {
+    const state = Array.from(this.globalPlayers.values()).map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      status: p.status
+    }));
+    
+    const msg = JSON.stringify({ type: 'global_state', players: state });
+    for (const player of this.globalPlayers.values()) {
+      if (player.ws.readyState === WebSocket.OPEN) {
+        player.ws.send(msg);
+      }
+    }
+  }
+
+  public sendInvite(fromPlayerId: string, targetPlayerId: string, roomCode: string, gameMode: GameMode): { success: boolean; error?: string } {
+    const fromPlayer = this.globalPlayers.get(fromPlayerId);
+    const targetPlayer = this.globalPlayers.get(targetPlayerId);
+
+    if (!fromPlayer) return { success: false, error: 'You are not registered' };
+    if (!targetPlayer) return { success: false, error: 'Target player not found' };
+    if (targetPlayer.status === 'in-room') return { success: false, error: 'Player is already in a room' };
+    
+    const room = this.rooms.get(roomCode.toUpperCase().trim());
+    if (!room) return { success: false, error: 'Room not found' };
+
+    const inviteId = this.generateId();
+    const invite: InternalPlayRequest = {
+      id: inviteId,
+      fromPlayerId,
+      fromPlayerName: fromPlayer.displayName,
+      targetPlayerId,
+      roomCode,
+      gameMode,
+      expiresAt: Date.now() + 60000 // 60s expiry
+    };
+
+    this.activeInvites.set(inviteId, invite);
+
+    if (targetPlayer.ws.readyState === WebSocket.OPEN) {
+      targetPlayer.ws.send(JSON.stringify({ type: 'invite_received', invite }));
+    }
+
+    return { success: true };
+  }
+
+  public respondInvite(inviteId: string, accept: boolean, responderId: string): { success: boolean; invite?: InternalPlayRequest; error?: string } {
+    const invite = this.activeInvites.get(inviteId);
+    if (!invite) return { success: false, error: 'Invite expired or invalid' };
+    if (invite.targetPlayerId !== responderId) return { success: false, error: 'Not your invite' };
+
+    this.activeInvites.delete(inviteId);
+
+    const fromPlayer = this.globalPlayers.get(invite.fromPlayerId);
+    if (fromPlayer && fromPlayer.ws.readyState === WebSocket.OPEN) {
+      const responder = this.globalPlayers.get(responderId);
+      fromPlayer.ws.send(JSON.stringify({ 
+        type: 'invite_response', 
+        inviteId, 
+        accepted: accept,
+        roomCode: accept ? invite.roomCode : undefined,
+        targetPlayerName: responder?.displayName || 'Unknown'
+      }));
+    }
+
+    return { success: true, invite: accept ? invite : undefined };
+  }
+
+  // --- END GLOBAL PLAYER LOGIC ---
 
   public getRoom(roomCode: string): InternalRoom | undefined {
     return this.rooms.get(roomCode.toUpperCase().trim());
@@ -360,6 +492,10 @@ export class GameEngine {
         success: false,
         error: `Need at least ${room.settings.minPlayers} players to start. Current: ${room.players.length}.`,
       };
+    }
+
+    if (room.status !== 'lobby' && room.status !== 'round-ended') {
+      return { success: false, error: 'Game is already starting or in progress.' };
     }
 
     // Lock lobby and start cinematic sequence

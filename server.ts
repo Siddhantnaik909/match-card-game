@@ -142,6 +142,41 @@ async function startServer() {
             break;
           }
 
+          case 'register_global': {
+            const res = gameEngine.registerGlobalPlayer(msg.displayName, ws, msg.sessionId);
+            if ('error' in res) {
+              ws.send(JSON.stringify({ type: 'error', code: 'REGISTER_FAILED', message: res.error }));
+              return;
+            }
+            meta.playerId = res.player.id;
+            meta.sessionId = res.player.sessionId;
+            socketMetaMap.set(ws, meta);
+            break;
+          }
+
+          case 'send_invite': {
+            if (meta.playerId && meta.roomCode) {
+              const room = gameEngine.getRoom(meta.roomCode);
+              if (room) {
+                const res = gameEngine.sendInvite(meta.playerId, msg.targetPlayerId, meta.roomCode, room.gameMode);
+                if (!res.success && res.error) {
+                  ws.send(JSON.stringify({ type: 'error', code: 'INVITE_FAILED', message: res.error }));
+                }
+              }
+            }
+            break;
+          }
+
+          case 'respond_invite': {
+            if (meta.playerId) {
+              const res = gameEngine.respondInvite(msg.inviteId, msg.accept, meta.playerId);
+              if (!res.success && res.error) {
+                ws.send(JSON.stringify({ type: 'error', code: 'RESPOND_FAILED', message: res.error }));
+              }
+            }
+            break;
+          }
+
           case 'create_room': {
             const res = gameEngine.createRoom(
               msg.displayName,
@@ -157,6 +192,10 @@ async function startServer() {
             meta.playerId = res.player.id;
             meta.sessionId = res.player.sessionId;
             socketMetaMap.set(ws, meta);
+
+            if (meta.playerId) {
+              gameEngine.updateGlobalPlayerStatus(meta.playerId, 'in-room');
+            }
 
             gameEngine.broadcastRoom(res.room);
             gameEngine.sendPrivateState(res.player);
@@ -174,6 +213,10 @@ async function startServer() {
             meta.sessionId = res.player.sessionId;
             socketMetaMap.set(ws, meta);
 
+            if (meta.playerId) {
+              gameEngine.updateGlobalPlayerStatus(meta.playerId, 'in-room');
+            }
+
             gameEngine.broadcastRoom(res.room);
             gameEngine.sendPrivateState(res.player);
             gameEngine.broadcastNotification(res.room, `${res.player.displayName} joined the lobby!`, 'info');
@@ -190,6 +233,10 @@ async function startServer() {
             meta.playerId = res.player.id;
             meta.sessionId = res.player.sessionId;
             socketMetaMap.set(ws, meta);
+
+            if (meta.playerId) {
+              gameEngine.updateGlobalPlayerStatus(meta.playerId, 'in-room');
+            }
 
             gameEngine.broadcastRoom(res.room);
             gameEngine.sendPrivateState(res.player);
@@ -284,6 +331,7 @@ async function startServer() {
           case 'leave_room': {
             if (meta.roomCode && meta.playerId) {
               gameEngine.removePlayer(meta.roomCode, meta.playerId);
+              gameEngine.updateGlobalPlayerStatus(meta.playerId, 'idle');
               meta.roomCode = undefined;
               meta.playerId = undefined;
             }
@@ -296,6 +344,7 @@ async function startServer() {
     });
 
     ws.on('close', () => {
+      gameEngine.removeGlobalPlayer(ws);
       gameEngine.handleDisconnect(ws);
     });
 

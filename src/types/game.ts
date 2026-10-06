@@ -175,8 +175,27 @@ export interface LeaderboardEntry {
   lastPlayed: string;
 }
 
+export interface GlobalPlayerInfo {
+  id: string;
+  displayName: string;
+  status: 'idle' | 'in-room';
+}
+
+export interface PlayRequest {
+  id: string;
+  fromPlayerId: string;
+  fromPlayerName: string;
+  targetPlayerId: string;
+  roomCode: string;
+  gameMode: GameMode;
+  expiresAt: number;
+}
+
 // Client -> Server WS Messages
 export type ClientMessage =
+  | { type: 'register_global'; displayName: string; sessionId?: string }
+  | { type: 'send_invite'; targetPlayerId: string }
+  | { type: 'respond_invite'; inviteId: string; accept: boolean }
   | { type: 'join_room'; roomCode: string; displayName: string; sessionId?: string }
   | { type: 'create_room'; displayName: string; gameMode: GameMode; sessionId?: string }
   | { type: 'reconnect'; roomCode: string; sessionId: string; playerId: string }
@@ -194,6 +213,9 @@ export type ClientMessage =
 
 // Server -> Client WS Messages
 export type ServerMessage =
+  | { type: 'global_state'; players: GlobalPlayerInfo[] }
+  | { type: 'invite_received'; invite: PlayRequest }
+  | { type: 'invite_response'; inviteId: string; accepted: boolean; roomCode?: string; targetPlayerName: string }
   | { type: 'room_state'; room: RoomPublicState }
   | { type: 'private_state'; state: PrivatePlayerState }
   | { type: 'phase_change'; phase: GamePhase; message?: string }

@@ -12,6 +12,8 @@ import {
   GameMode,
   RoomSettings,
   GameCard,
+  GlobalPlayerInfo,
+  PlayRequest,
 } from '../types/game';
 import { sound } from '../services/sound';
 
@@ -39,12 +41,24 @@ export function useGameSocket() {
   const [lastReceivedCard, setLastReceivedCard] = useState<GameCard | null>(null);
   const [isPassingAnim, setIsPassingAnim] = useState(false);
   const [lastJoinError, setLastJoinError] = useState<string | null>(null);
+  
+  const [globalPlayers, setGlobalPlayers] = useState<GlobalPlayerInfo[]>([]);
+  const [incomingInvite, setIncomingInvite] = useState<PlayRequest | null>(null);
+  
   const isPendingJoinRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messageQueueRef = useRef<ClientMessage[]>([]);
+
+  // Use refs to avoid stale closure problems in WebSocket handlers
+  const roomRef = useRef<RoomPublicState | null>(null);
+  const privatePlayerRef = useRef<PrivatePlayerState | null>(null);
+
+  // Keep refs in sync with state
+  useEffect(() => { roomRef.current = room; }, [room]);
+  useEffect(() => { privatePlayerRef.current = privatePlayer; }, [privatePlayer]);
 
   const addToast = useCallback(
     (message: string, variant: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -128,43 +142,73 @@ export function useGameSocket() {
         try {
           const msg = JSON.parse(event.data) as ServerMessage;
           switch (msg.type) {
+            case 'global_state': {
+              setGlobalPlayers(msg.players);
+              break;
+            }
+
+            case 'invite_received': {
+              sound.playCardReceive();
+              setIncomingInvite(msg.invite);
+              break;
+            }
+
+            case 'invite_response': {
+              if (msg.accepted && msg.roomCode) {
+                addToast(`${msg.targetPlayerName} accepted your invite!`, 'success');
+              } else {
+                addToast(`${msg.targetPlayerName} declined your invite.`, 'warning');
+              }
+              break;
+            }
+
             case 'room_state': {
-              const prev = room;
-              setRoom(msg.room);
-              // Room joined successfully — clear any pending join error
+              // Use functional update to get fresh previous state (avoids stale closure)
+              setRoom((prev) => {
+                const newRoom = msg.room;
+
+                // Cinematic audio cues
+                if (newRoom.cinematicState) {
+                  const step = newRoom.cinematicState.step;
+                  if (step === 'ready') {
+                    sound.playCountdown();
+                  } else if (step === 'count_3' || step === 'count_2' || step === 'count_1') {
+                    sound.playUrgentTick();
+                  } else if (step === 'go') {
+                    sound.playGoBuzzer();
+                    sound.playDealCascade();
+                  }
+                }
+
+                // In-game urgent pass timer audio cues
+                if (
+                  newRoom.status === 'in-progress' &&
+                  newRoom.passTimerRemaining !== undefined &&
+                  newRoom.passTimerRemaining <= 3 &&
+                  newRoom.passTimerRemaining > 0 &&
+                  prev?.passTimerRemaining !== newRoom.passTimerRemaining
+                ) {
+                  sound.playUrgentTick();
+                }
+
+                return newRoom;
+              });
+
+              // Room joined/created successfully — clear any pending join error
               isPendingJoinRef.current = false;
               setLastJoinError(null);
-
-              // Cinematic audio cues
-              if (msg.room.cinematicState) {
-                const step = msg.room.cinematicState.step;
-                if (step === 'ready') {
-                  sound.playCountdown();
-                } else if (step === 'count_3' || step === 'count_2' || step === 'count_1') {
-                  sound.playUrgentTick();
-                } else if (step === 'go') {
-                  sound.playGoBuzzer();
-                  sound.playDealCascade();
-                }
-              }
-
-              // In-game urgent pass timer audio cues
-              if (
-                msg.room.status === 'in-progress' &&
-                msg.room.passTimerRemaining !== undefined &&
-                msg.room.passTimerRemaining <= 3 &&
-                msg.room.passTimerRemaining > 0 &&
-                prev?.passTimerRemaining !== msg.room.passTimerRemaining
-              ) {
-                sound.playUrgentTick();
-              }
               break;
             }
 
             case 'private_state': {
               setPrivatePlayer(msg.state);
+              // Save session for reconnect — use roomCode from room_state message
+              // which arrives before or alongside private_state.
+              // Use ref to get fresh room value, and also check the room code
+              // from the message itself if available.
               if (msg.state.sessionId && msg.state.id) {
-                const currentRoomCode = room?.roomCode;
+                // Try to get roomCode from current room ref
+                const currentRoomCode = roomRef.current?.roomCode;
                 if (currentRoomCode) {
                   const stored: StoredSession = {
                     sessionId: msg.state.sessionId,
@@ -173,6 +217,20 @@ export function useGameSocket() {
                     displayName: msg.state.displayName,
                   };
                   sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored));
+                } else {
+                  // room_state may not have been processed yet — delay briefly
+                  setTimeout(() => {
+                    const delayedRoomCode = roomRef.current?.roomCode;
+                    if (delayedRoomCode) {
+                      const stored: StoredSession = {
+                        sessionId: msg.state.sessionId,
+                        playerId: msg.state.id,
+                        roomCode: delayedRoomCode,
+                        displayName: msg.state.displayName,
+                      };
+                      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored));
+                    }
+                  }, 100);
                 }
               }
               break;
@@ -221,7 +279,7 @@ export function useGameSocket() {
             }
 
             case 'error': {
-              // If we're waiting on a join, surface the error into the modal instead of toast
+              // If we're waiting on a join/create, surface the error into the modal
               if (isPendingJoinRef.current) {
                 setLastJoinError(msg.message);
                 isPendingJoinRef.current = false;
@@ -260,7 +318,8 @@ export function useGameSocket() {
     } catch (err) {
       console.error('[WS] Connection init failed:', err);
     }
-  }, [addToast, room?.roomCode]);
+  // IMPORTANT: No dependency on room — we use refs to avoid WebSocket reconnection loops
+  }, [addToast]);
 
   useEffect(() => {
     connect();
@@ -272,8 +331,23 @@ export function useGameSocket() {
   }, [connect]);
 
   // Action methods
+  const registerGlobal = useCallback((displayName: string) => {
+    send({ type: 'register_global', displayName });
+  }, [send]);
+
+  const sendInvite = useCallback((targetPlayerId: string) => {
+    send({ type: 'send_invite', targetPlayerId });
+  }, [send]);
+
+  const respondInvite = useCallback((inviteId: string, accept: boolean) => {
+    send({ type: 'respond_invite', inviteId, accept });
+    setIncomingInvite(null);
+  }, [send]);
+
   const createRoom = useCallback(
     (displayName: string, gameMode: GameMode = 'match-and-collect') => {
+      isPendingJoinRef.current = true;
+      setLastJoinError(null);
       send({ type: 'create_room', displayName, gameMode });
     },
     [send]
@@ -376,5 +450,10 @@ export function useGameSocket() {
     lockRoom,
     leaveRoom,
     addToast,
+    globalPlayers,
+    incomingInvite,
+    registerGlobal,
+    sendInvite,
+    respondInvite,
   };
 }

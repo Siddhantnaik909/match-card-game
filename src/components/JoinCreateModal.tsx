@@ -142,12 +142,11 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
         return;
       }
 
+      // Send create room via WebSocket — modal stays open until room_state arrives
       onCreateRoom(displayName.trim(), gameMode);
-      onClose();
     } catch {
-      // If offline or fast connection, proceed through WebSocket which also validates
+      // If offline, proceed through WebSocket which also validates
       onCreateRoom(displayName.trim(), gameMode);
-      onClose();
     } finally {
       setIsSubmitting(false);
     }

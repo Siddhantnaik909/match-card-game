@@ -30,7 +30,7 @@ import {
   KeyRound,
   UserPlus,
 } from 'lucide-react';
-import { GameMode, MatchResultRecord, LeaderboardEntry } from '../types/game';
+import { GameMode, MatchResultRecord, LeaderboardEntry, GlobalPlayerInfo } from '../types/game';
 import { sound } from '../services/sound';
 import { OFFICE_CARDS } from '../utils/cards';
 
@@ -41,6 +41,10 @@ interface LandingHeroProps {
   onSelectMode: (mode: GameMode) => void;
   onCreateRoom?: (displayName: string, gameMode: GameMode) => void;
   onJoinRoom?: (roomCode: string, displayName: string) => void;
+  joinError?: string | null;
+  globalPlayers?: GlobalPlayerInfo[];
+  onRegisterGlobal?: (displayName: string) => void;
+  onSendInvite?: (targetPlayerId: string) => void;
 }
 
 export const LandingHero: React.FC<LandingHeroProps> = ({
@@ -50,9 +54,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onSelectMode,
   onCreateRoom,
   onJoinRoom,
+  joinError,
+  globalPlayers = [],
+  onRegisterGlobal,
+  onSendInvite,
 }) => {
   // Quick play form state right on the hero
-  const [quickTab, setQuickTab] = useState<'create' | 'join'>('create');
+  const [quickTab, setQuickTab] = useState<'create' | 'join' | 'players'>('create');
+  const [isRegistered, setIsRegistered] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [selectedMode, setSelectedMode] = useState<GameMode>('match-and-collect');
@@ -135,19 +144,35 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
       } else {
         onPlayNow();
       }
-    } else {
-      let trimmedCode = roomCodeInput.trim().toUpperCase().replace(/\s+/g, '-');
-      if (!trimmedCode.startsWith('MATCH-') && /^[A-Z0-9]{4,6}$/.test(trimmedCode)) {
-        trimmedCode = `MATCH-${trimmedCode}`;
+    } else if (quickTab === 'join') {
+      let raw = roomCodeInput.trim();
+      const paramMatch = raw.match(/[?&]room=([^&\s]+)/i);
+      if (paramMatch) raw = paramMatch[1];
+      const stripped = raw.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      let cleanRoomCode = '';
+      const fullMatch = stripped.match(/MATCH-([A-Z0-9]{4,6})/);
+      if (fullMatch) {
+        cleanRoomCode = `MATCH-${fullMatch[1]}`;
+      } else {
+        const suffix = stripped.replace(/-/g, '');
+        if (/^[A-Z0-9]{4,6}$/.test(suffix)) {
+          cleanRoomCode = `MATCH-${suffix}`;
+        }
       }
-      if (!trimmedCode || trimmedCode.length < 5) {
-        setFormError('Please enter a valid room code (e.g. MATCH-XXXX)');
+
+      if (!cleanRoomCode) {
+        setFormError('Please enter a valid room code (e.g. 4GBX or MATCH-4GBX)');
         return;
       }
       if (onJoinRoom) {
-        onJoinRoom(trimmedCode, trimmedName);
+        onJoinRoom(cleanRoomCode, trimmedName);
       } else {
         onPlayNow();
+      }
+    } else if (quickTab === 'players') {
+      if (onRegisterGlobal) {
+        onRegisterGlobal(trimmedName);
+        setIsRegistered(true);
       }
     }
   };
@@ -265,6 +290,22 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                   <KeyRound className="w-3.5 h-3.5" />
                   <span>Join with Code</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickTab('players');
+                    setFormError('');
+                    sound.playButtonClick();
+                  }}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    quickTab === 'players'
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Online</span>
+                </button>
               </div>
 
               <span className="text-[11px] font-mono font-bold text-slate-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
@@ -300,6 +341,41 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                     onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
                     className="w-full px-4 py-3.5 rounded-xl bg-slate-950/90 border border-slate-700/80 text-white placeholder:text-slate-500 font-mono text-sm tracking-wider uppercase focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none transition"
                   />
+                </div>
+              ) : quickTab === 'players' ? (
+                <div className="space-y-4">
+                  {!isRegistered ? (
+                    <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 text-center">
+                      <p className="text-sm text-slate-300 mb-4">Enter your name above and click "Go Online" to see other players and invite them.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                      {globalPlayers.length <= 1 ? (
+                        <p className="text-sm text-slate-400 text-center py-4">Waiting for other players to come online...</p>
+                      ) : (
+                        globalPlayers.filter(p => p.displayName !== playerName.trim()).map(p => (
+                          <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/80 border border-slate-700/50">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${p.status === 'idle' ? 'bg-green-400' : 'bg-amber-400'}`} />
+                              <span className="text-sm font-semibold text-slate-200">{p.displayName}</span>
+                              <span className="text-xs text-slate-500">#{p.id.substring(0,4)}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (onSendInvite) onSendInvite(p.id);
+                                sound.playButtonClick();
+                              }}
+                              disabled={p.status !== 'idle'}
+                              className="px-3 py-1 rounded border border-amber-500/50 text-amber-400 text-xs font-bold hover:bg-amber-500/10 disabled:opacity-50 transition"
+                            >
+                              {p.status === 'idle' ? 'Invite' : 'In Game'}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -350,9 +426,10 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 </div>
               )}
 
-              {formError && (
+              {/* Error messages: either local form error or server WebSocket join error */}
+              {(formError || (quickTab === 'join' && joinError)) && (
                 <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
-                  {formError}
+                  {formError || joinError}
                 </div>
               )}
 
@@ -360,7 +437,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 type="submit"
                 className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm uppercase tracking-wider shadow-[0_0_25px_rgba(251,191,36,0.3)] hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer ring-2 ring-amber-400/40"
               >
-                <span>{quickTab === 'create' ? 'CREATE ROOM & PLAY' : 'JOIN ROOM'}</span>
+                <span>{quickTab === 'create' ? 'CREATE ROOM & PLAY' : quickTab === 'join' ? 'JOIN ROOM' : isRegistered ? 'UPDATE NAME' : 'GO ONLINE'}</span>
                 <ArrowRight className="w-4 h-4 stroke-[3]" />
               </button>
             </form>

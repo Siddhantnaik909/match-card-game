@@ -38,6 +38,8 @@ export function useGameSocket() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [lastReceivedCard, setLastReceivedCard] = useState<GameCard | null>(null);
   const [isPassingAnim, setIsPassingAnim] = useState(false);
+  const [lastJoinError, setLastJoinError] = useState<string | null>(null);
+  const isPendingJoinRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -129,6 +131,9 @@ export function useGameSocket() {
             case 'room_state': {
               const prev = room;
               setRoom(msg.room);
+              // Room joined successfully — clear any pending join error
+              isPendingJoinRef.current = false;
+              setLastJoinError(null);
 
               // Cinematic audio cues
               if (msg.room.cinematicState) {
@@ -216,7 +221,13 @@ export function useGameSocket() {
             }
 
             case 'error': {
-              addToast(msg.message, 'error');
+              // If we're waiting on a join, surface the error into the modal instead of toast
+              if (isPendingJoinRef.current) {
+                setLastJoinError(msg.message);
+                isPendingJoinRef.current = false;
+              } else {
+                addToast(msg.message, 'error');
+              }
               break;
             }
 
@@ -270,10 +281,17 @@ export function useGameSocket() {
 
   const joinRoom = useCallback(
     (roomCode: string, displayName: string) => {
+      isPendingJoinRef.current = true;
+      setLastJoinError(null);
       send({ type: 'join_room', roomCode, displayName });
     },
     [send]
   );
+
+  const clearJoinError = useCallback(() => {
+    setLastJoinError(null);
+    isPendingJoinRef.current = false;
+  }, []);
 
   const toggleReady = useCallback(() => {
     send({ type: 'toggle_ready' });
@@ -343,6 +361,8 @@ export function useGameSocket() {
     toasts,
     lastReceivedCard,
     isPassingAnim,
+    lastJoinError,
+    clearJoinError,
     createRoom,
     joinRoom,
     toggleReady,

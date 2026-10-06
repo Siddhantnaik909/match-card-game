@@ -27,6 +27,8 @@ interface JoinCreateModalProps {
   initialTab?: 'create' | 'join';
   onCreateRoom: (displayName: string, mode: GameMode) => void;
   onJoinRoom: (roomCode: string, displayName: string) => void;
+  joinError?: string | null;
+  onClearJoinError?: () => void;
 }
 
 const RANDOM_NAMES = [
@@ -54,6 +56,8 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
   initialTab,
   onCreateRoom,
   onJoinRoom,
+  joinError,
+  onClearJoinError,
 }) => {
   const [tab, setTab] = useState<'create' | 'join'>('create');
   const [displayName, setDisplayName] = useState('');
@@ -206,14 +210,15 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
       }
 
       // Room code validity is validated by the server via WebSocket join_room.
-      // Any errors (invalid code, room full, locked) arrive as toast notifications.
+      // The modal stays open — App.tsx closes it when room state is confirmed.
+      // Errors (invalid code, room full) come back via joinError prop.
       onJoinRoom(cleanRoomCode, displayName.trim());
-      onClose();
+      // Keep submitting=true — will reset when joinError arrives or room joins
     } catch {
       // If name API is unreachable, proceed — WebSocket server validates everything
       onJoinRoom(cleanRoomCode, displayName.trim());
-      onClose();
     } finally {
+      // Don't reset isSubmitting here — we wait for server response
       setIsSubmitting(false);
     }
   };
@@ -287,15 +292,15 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
           </button>
         </div>
 
-        {/* Error notification banner */}
-        {errorMessage && (
+        {/* Error notification banner — local validation or server join error */}
+        {(errorMessage || joinError) && (
           <div className="mb-5 p-4 rounded-2xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs sm:text-sm flex items-start gap-3 animate-shake">
             <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div className="font-semibold whitespace-pre-line leading-relaxed flex-1">
-              {errorMessage}
+              {joinError || errorMessage}
             </div>
             <button
-              onClick={() => setErrorMessage(null)}
+              onClick={() => { setErrorMessage(null); onClearJoinError?.(); }}
               className="text-rose-400 hover:text-rose-200 text-xs p-1"
             >
               ✕

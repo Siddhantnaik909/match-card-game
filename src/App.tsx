@@ -29,6 +29,8 @@ export default function App() {
     toasts,
     lastReceivedCard,
     isPassingAnim,
+    lastJoinError,
+    clearJoinError,
     createRoom,
     joinRoom,
     toggleReady,
@@ -62,6 +64,15 @@ export default function App() {
       setIsJoinCreateOpen(true);
     }
   }, [room]);
+
+  // Close the modal when room join is confirmed by server
+  useEffect(() => {
+    if (room && isJoinCreateOpen) {
+      setIsJoinCreateOpen(false);
+      setUrlRoomCode('');
+      clearJoinError();
+    }
+  }, [room, isJoinCreateOpen, clearJoinError]);
 
   const handleSelectGameMode = (mode: GameMode) => {
     setDefaultGameMode(mode);
@@ -162,12 +173,15 @@ export default function App() {
         onClose={() => {
           setIsJoinCreateOpen(false);
           setUrlRoomCode('');
+          clearJoinError();
         }}
         defaultMode={defaultGameMode}
         initialRoomCode={urlRoomCode}
         initialTab={urlRoomCode ? 'join' : 'create'}
         onCreateRoom={createRoom}
         onJoinRoom={joinRoom}
+        joinError={lastJoinError}
+        onClearJoinError={clearJoinError}
       />
 
       <HowToPlayModal

@@ -192,20 +192,7 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
     sound.playButtonClick();
 
     try {
-      // Validate Room Code first
-      const roomRes = await fetch('/api/validate-room', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode: cleanRoomCode }),
-      });
-      const roomData = await roomRes.json();
-      if (!roomData.valid) {
-        setErrorMessage(roomData.error || 'Invalid room code.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Then validate name
+      // Only validate name via API (room validation is done server-side via WebSocket)
       const res = await fetch('/api/validate-name', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -218,9 +205,12 @@ export const JoinCreateModal: React.FC<JoinCreateModalProps> = ({
         return;
       }
 
+      // Room code validity is validated by the server via WebSocket join_room.
+      // Any errors (invalid code, room full, locked) arrive as toast notifications.
       onJoinRoom(cleanRoomCode, displayName.trim());
       onClose();
     } catch {
+      // If name API is unreachable, proceed — WebSocket server validates everything
       onJoinRoom(cleanRoomCode, displayName.trim());
       onClose();
     } finally {

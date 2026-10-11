@@ -1,27 +1,36 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect } from 'react';
 import { UserPlus } from 'lucide-react';
 import { useGameSocket } from './hooks/useGameSocket';
+import { useAuth } from './hooks/useAuth';
 import { GameMode } from './types/game';
 import { Navbar } from './components/Navbar';
 import { LandingHero } from './components/LandingHero';
 import { GameSelectorModal } from './components/GameSelectorModal';
 import { JoinCreateModal } from './components/JoinCreateModal';
 import { LobbyView } from './components/LobbyView';
+import { PostGameScreen } from './components/PostGameScreen';
 import { MatchCollectBoard } from './components/MatchCollectBoard';
 import { ChorChitthiBoard } from './components/ChorChitthiBoard';
-import { WinnerModal } from './components/WinnerModal';
-import { ResultsPanel } from './components/ResultsPanel';
 import { HowToPlayModal } from './components/HowToPlayModal';
 import { AdminSettingsModal } from './components/AdminSettingsModal';
 import { CinematicStartOverlay } from './components/CinematicStartOverlay';
 import { Toast } from './components/Toast';
+import { ResultsPanel } from './components/ResultsPanel';
+import { AuthModal } from './components/AuthModal';
+import { ProfileModal } from './components/ProfileModal';
+import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { MatchmakingBanner } from './components/MatchmakingBanner';
 
 export default function App() {
+  const {
+    user,
+    token,
+    login,
+    register,
+    logout,
+    updateProfile,
+  } = useAuth();
+
   const {
     isConnected,
     isReconnecting,
@@ -40,6 +49,7 @@ export default function App() {
     passCard,
     policeAccuse,
     nextRound,
+    readyForRematch,
     updateSettings,
     removePlayer,
     lockRoom,
@@ -49,6 +59,9 @@ export default function App() {
     registerGlobal,
     sendInvite,
     respondInvite,
+    queueState,
+    joinQueue,
+    leaveQueue,
   } = useGameSocket();
 
   // Modal states
@@ -57,6 +70,9 @@ export default function App() {
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(false);
   const [isResultsOpen, setIsResultsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [defaultGameMode, setDefaultGameMode] = useState<GameMode>('match-and-collect');
 
   const [urlRoomCode, setUrlRoomCode] = useState('');
@@ -105,6 +121,10 @@ export default function App() {
         onLeaveRoom={leaveRoom}
         isHost={isHost}
         onPlayNow={handlePlayNow}
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -115,12 +135,24 @@ export default function App() {
             onHowToPlay={() => setIsHowToPlayOpen(true)}
             onChooseGame={() => setIsGameSelectorOpen(true)}
             onSelectMode={handleSelectGameMode}
-            onCreateRoom={createRoom}
-            onJoinRoom={joinRoom}
+            onCreateRoom={(name, mode) => createRoom(name, mode, user?.id)}
+            onJoinRoom={(code, name) => joinRoom(code, name, user?.id)}
             joinError={lastJoinError}
             globalPlayers={globalPlayers}
-            onRegisterGlobal={registerGlobal}
+            onRegisterGlobal={(name) => registerGlobal(name)}
             onSendInvite={sendInvite}
+            onFindMatch={(name, mode) => joinQueue(name, mode, user?.id)}
+            defaultPlayerName={user?.displayName || ''}
+          />
+        ) : room.status === 'round-ended' ? (
+          /* Phase 4.1: Persistent post-game screen — stays inside the room */
+          <PostGameScreen
+            room={room}
+            currentPlayerId={privatePlayer?.id || ''}
+            isHost={isHost}
+            onPlayAgain={readyForRematch}
+            onLeaveRoom={leaveRoom}
+            onStartNextGame={nextRound}
           />
         ) : room.status === 'lobby' || room.status === 'countdown' ? (
           <LobbyView
@@ -131,6 +163,7 @@ export default function App() {
             onRemovePlayer={removePlayer}
             onLockRoom={lockRoom}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onLeaveRoom={leaveRoom}
           />
         ) : room.gameMode === 'match-and-collect' ? (
           <MatchCollectBoard
@@ -160,17 +193,6 @@ export default function App() {
         />
       )}
 
-      {/* Winner Celebration Modal */}
-      {room?.winner && (
-        <WinnerModal
-          winner={room.winner}
-          results={room.lastMatchResults || []}
-          onViewResults={() => setIsResultsOpen(true)}
-          onBackToLobby={nextRound}
-          isHost={isHost}
-        />
-      )}
-
       {/* Modals */}
       <GameSelectorModal
         isOpen={isGameSelectorOpen}
@@ -188,8 +210,8 @@ export default function App() {
         defaultMode={defaultGameMode}
         initialRoomCode={urlRoomCode}
         initialTab={urlRoomCode ? 'join' : 'create'}
-        onCreateRoom={createRoom}
-        onJoinRoom={joinRoom}
+        onCreateRoom={(name, mode) => createRoom(name, mode, user?.id)}
+        onJoinRoom={(code, name) => joinRoom(code, name, user?.id)}
         joinError={lastJoinError}
         onClearJoinError={clearJoinError}
       />
@@ -202,6 +224,35 @@ export default function App() {
       <ResultsPanel
         isOpen={isResultsOpen}
         onClose={() => setIsResultsOpen(false)}
+      />
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onLogin={login}
+        onRegister={register}
+      />
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onUpdateProfile={updateProfile}
+        onLogout={logout}
+      />
+
+      <AdminDashboardModal
+        isOpen={isAdminOpen}
+        onClose={() => setIsAdminOpen(false)}
+        token={token}
+      />
+
+      <MatchmakingBanner
+        inQueue={queueState.inQueue}
+        queueLength={queueState.queueLength}
+        gameMode={queueState.gameMode}
+        estimatedWaitSeconds={queueState.estimatedWaitSeconds}
+        onCancel={leaveQueue}
       />
 
       {room && (
@@ -240,7 +291,7 @@ export default function App() {
             <button
               onClick={() => {
                 respondInvite(incomingInvite.id, true);
-                joinRoom(incomingInvite.roomCode, privatePlayer?.displayName || 'Guest');
+                joinRoom(incomingInvite.roomCode, privatePlayer?.displayName || user?.displayName || 'Guest', user?.id);
               }}
               className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 px-3 rounded-lg text-xs transition"
             >

@@ -17,6 +17,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { RoomPublicState } from '../types/game';
+import { PublicUserProfile } from '../types/auth';
 import { useAudioManager } from '../hooks/useAudioManager';
 
 interface NavbarProps {
@@ -29,6 +30,10 @@ interface NavbarProps {
   onLeaveRoom: () => void;
   isHost: boolean;
   onPlayNow?: () => void;
+  user: PublicUserProfile | null;
+  onOpenAuth: () => void;
+  onOpenProfile: () => void;
+  onOpenAdmin: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,6 +46,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLeaveRoom,
   isHost,
   onPlayNow,
+  user,
+  onOpenAuth,
+  onOpenProfile,
+  onOpenAdmin,
 }) => {
   const {
     sfxEnabled,
@@ -232,6 +241,41 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Trophy className="w-4 h-4 text-amber-400" />
             <span className="hidden sm:inline">Rankings</span>
           </button>
+
+          {/* User Account / Profile or Sign In */}
+          {user ? (
+            <button
+              onClick={onOpenProfile}
+              title={`Profile (${user.displayName})`}
+              className="min-h-[44px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer text-white shadow-sm"
+            >
+              <span className="text-base">{user.avatar}</span>
+              <span className="hidden md:inline truncate max-w-[90px]">{user.displayName}</span>
+              <span className="hidden lg:inline text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+                {user.stats.rating}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              title="Sign in or register"
+              className="min-h-[44px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Sign In</span>
+            </button>
+          )}
+
+          {/* Admin Dashboard if user is admin */}
+          {user?.role === 'admin' && (
+            <button
+              onClick={onOpenAdmin}
+              title="Admin Dashboard"
+              className="min-h-[44px] px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+            >
+              <span className="text-xs">🛡️</span>
+              <span className="hidden sm:inline">Admin</span>
+            </button>
+          )}
 
           {/* Quick Play CTA when outside a room */}
           {!room && onPlayNow && (

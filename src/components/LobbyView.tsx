@@ -32,6 +32,7 @@ interface LobbyViewProps {
   onRemovePlayer: (playerId: string) => void;
   onLockRoom: (locked: boolean) => void;
   onOpenSettings: () => void;
+  onLeaveRoom?: () => void;
 }
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
@@ -42,6 +43,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onRemovePlayer,
   onLockRoom,
   onOpenSettings,
+  onLeaveRoom,
 }) => {
   const [copied, setCopied] = useState(false);
   const isHost = room.hostId === currentPlayerId;
@@ -75,6 +77,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-amber-500/20 text-amber-400 border border-amber-500/40">
                 {room.gameMode === 'match-and-collect' ? 'Match & Collect' : 'Chor-Chitthi'}
               </span>
+              {room.matchNumber && room.matchNumber > 1 && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  Game {room.matchNumber}
+                </span>
+              )}
               {room.isLocked && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
                   <Lock className="w-3 h-3" /> Room Locked
@@ -248,20 +255,33 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
         {/* Action Bottom Bar */}
         <div className="pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <button
-            onClick={() => {
-              sound.playButtonClick();
-              onToggleReady();
-            }}
-            className={`w-full sm:w-auto px-7 py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer ${
-              me?.ready
-                ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-500/30'
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>{me?.ready ? 'LOCKED IN · READY' : 'CLICK TO READY UP'}</span>
-          </button>
+          <div className="flex w-full sm:w-auto gap-3">
+            <button
+              onClick={() => {
+                sound.playButtonClick();
+                onToggleReady();
+              }}
+              className={`flex-1 sm:w-auto px-7 py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider transition flex items-center justify-center gap-2 cursor-pointer ${
+                me?.ready
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-500/30'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{me?.ready ? 'LOCKED IN · READY' : 'CLICK TO READY UP'}</span>
+            </button>
+
+            {onLeaveRoom && (
+              <button
+                onClick={() => { sound.playButtonClick(); onLeaveRoom(); }}
+                className="px-4 py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 bg-slate-900 hover:bg-rose-500/10 border border-slate-700 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                title="Leave Room"
+              >
+                <Flame className="w-4 h-4" />
+                <span className="hidden sm:inline">Leave</span>
+              </button>
+            )}
+          </div>
 
           {isHost ? (
             <button

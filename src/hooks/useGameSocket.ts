@@ -44,6 +44,17 @@ export function useGameSocket() {
   
   const [globalPlayers, setGlobalPlayers] = useState<GlobalPlayerInfo[]>([]);
   const [incomingInvite, setIncomingInvite] = useState<PlayRequest | null>(null);
+  const [queueState, setQueueState] = useState<{
+    inQueue: boolean;
+    queueLength: number;
+    gameMode: GameMode;
+    estimatedWaitSeconds: number;
+  }>({
+    inQueue: false,
+    queueLength: 0,
+    gameMode: 'match-and-collect',
+    estimatedWaitSeconds: 15,
+  });
   
   const isPendingJoinRef = useRef(false);
 
@@ -273,6 +284,23 @@ export function useGameSocket() {
               break;
             }
 
+            case 'queue_status': {
+              setQueueState({
+                inQueue: msg.inQueue,
+                queueLength: msg.queueLength,
+                gameMode: msg.gameMode,
+                estimatedWaitSeconds: msg.estimatedWaitSeconds,
+              });
+              break;
+            }
+
+            case 'match_found': {
+              sound.playVictory();
+              setQueueState((prev) => ({ ...prev, inQueue: false }));
+              addToast(`MATCH FOUND! Entering room ${msg.roomCode}...`, 'success');
+              break;
+            }
+
             case 'notification': {
               addToast(msg.message, msg.variant || 'info');
               break;
@@ -345,22 +373,34 @@ export function useGameSocket() {
   }, [send]);
 
   const createRoom = useCallback(
-    (displayName: string, gameMode: GameMode = 'match-and-collect') => {
+    (displayName: string, gameMode: GameMode = 'match-and-collect', userId?: string) => {
       isPendingJoinRef.current = true;
       setLastJoinError(null);
-      send({ type: 'create_room', displayName, gameMode });
+      send({ type: 'create_room', displayName, gameMode, userId });
     },
     [send]
   );
 
   const joinRoom = useCallback(
-    (roomCode: string, displayName: string) => {
+    (roomCode: string, displayName: string, userId?: string) => {
       isPendingJoinRef.current = true;
       setLastJoinError(null);
-      send({ type: 'join_room', roomCode, displayName });
+      send({ type: 'join_room', roomCode, displayName, userId });
     },
     [send]
   );
+
+  const joinQueue = useCallback(
+    (displayName: string, gameMode: GameMode = 'match-and-collect', userId?: string) => {
+      send({ type: 'join_queue', displayName, gameMode, userId });
+    },
+    [send]
+  );
+
+  const leaveQueue = useCallback(() => {
+    send({ type: 'leave_queue' });
+    setQueueState((prev) => ({ ...prev, inQueue: false }));
+  }, [send]);
 
   const clearJoinError = useCallback(() => {
     setLastJoinError(null);
@@ -397,6 +437,10 @@ export function useGameSocket() {
 
   const nextRound = useCallback(() => {
     send({ type: 'next_round' });
+  }, [send]);
+
+  const readyForRematch = useCallback(() => {
+    send({ type: 'ready_for_rematch' });
   }, [send]);
 
   const updateSettings = useCallback(
@@ -445,6 +489,7 @@ export function useGameSocket() {
     passCard,
     policeAccuse,
     nextRound,
+    readyForRematch,
     updateSettings,
     removePlayer,
     lockRoom,
@@ -455,5 +500,8 @@ export function useGameSocket() {
     registerGlobal,
     sendInvite,
     respondInvite,
+    queueState,
+    joinQueue,
+    leaveQueue,
   };
 }

@@ -205,8 +205,8 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
         </div>
 
         {/* Center: Circular Combat Clock & Real-Time Arena Status */}
-        <div className="order-1 lg:order-2 flex flex-col items-center justify-center text-center">
-          <div className="relative flex items-center justify-center w-48 h-48 sm:w-52 sm:h-52 rounded-full bg-slate-950/90 border border-slate-800/90 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
+        <div className="order-1 lg:order-2 flex flex-col items-center justify-center text-center scale-95 sm:scale-100">
+          <div className="relative flex items-center justify-center w-44 h-44 sm:w-52 sm:h-52 rounded-full bg-slate-950/90 border border-slate-800/90 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md">
             {/* SVG Progress Ring */}
             <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none p-2">
               <circle
@@ -394,7 +394,7 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
         </div>
 
         {/* Dynamic player chips */}
-        <div className="flex flex-wrap items-center gap-2 max-h-36 overflow-y-auto pr-1">
+        <div className="flex flex-wrap items-center gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
           {players.map((p, idx) => {
             const isMe = p.id === currentPlayerId;
             const hasPicked = p.hasPassed;

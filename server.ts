@@ -82,7 +82,179 @@ async function startServer() {
     res.status(400).json({ valid: false, error: 'Valid roomCode string required' });
   });
 
-  // 5. Admin Blocked Words Endpoints
+  // 5. Authentication & User Profile Endpoints
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
+    try {
+      const { username, displayName, email, password, avatar } = req.body || {};
+      if (!username || !email || !password) {
+        res.status(400).json({ error: 'Username, email, and password are required.' });
+        return;
+      }
+      if (password.length < 6) {
+        res.status(400).json({ error: 'Password must be at least 6 characters.' });
+        return;
+      }
+      const val = nameFilter.validate(displayName || username);
+      if (!val.valid) {
+        res.status(400).json({ error: val.error || 'Invalid display name' });
+        return;
+      }
+
+      const result = await storage.registerUser({
+        username: String(username),
+        displayName: String(displayName || username),
+        email: String(email),
+        password: String(password),
+        avatar: typeof avatar === 'string' ? avatar : '🎮',
+      });
+
+      if (result.error) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      // Auto-login upon registration
+      const loginRes = await storage.loginUser({ login: username, password });
+      res.json({ success: true, user: loginRes.user, token: loginRes.session?.token });
+    } catch (e: any) {
+      console.error('Registration failed:', e);
+      res.status(500).json({ error: 'Registration failed. Please try again.' });
+    }
+  });
+
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
+    try {
+      const { login, password } = req.body || {};
+      if (!login || !password) {
+        res.status(400).json({ error: 'Username/Email and password are required.' });
+        return;
+      }
+      const result = await storage.loginUser({ login: String(login), password: String(password) });
+      if (result.error) {
+        res.status(401).json({ error: result.error });
+        return;
+      }
+      res.json({ success: true, user: result.user, token: result.session?.token });
+    } catch (e: any) {
+      console.error('Login error:', e);
+      res.status(500).json({ error: 'Authentication failed.' });
+    }
+  });
+
+  app.get('/api/auth/me', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: 'No active session token provided.' });
+      return;
+    }
+    const user = storage.getUserBySessionToken(token);
+    if (!user) {
+      res.status(401).json({ error: 'Session expired or invalid.' });
+      return;
+    }
+    res.json({ user });
+  });
+
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (token) {
+      storage.logoutSession(token);
+    }
+    res.json({ success: true });
+  });
+
+  app.put('/api/profile/update', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: 'Unauthorized.' });
+      return;
+    }
+    const user = storage.getUserBySessionToken(token);
+    if (!user) {
+      res.status(401).json({ error: 'Unauthorized.' });
+      return;
+    }
+    const { displayName, avatar } = req.body || {};
+    if (displayName) {
+      const val = nameFilter.validate(displayName);
+      if (!val.valid) {
+        res.status(400).json({ error: val.error });
+        return;
+      }
+    }
+    const result = storage.updateUserProfile(user.id, { displayName, avatar });
+    if (result.error) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true, user: result.user });
+  });
+
+  // 6. Active Rooms Endpoint (Live presence of public rooms)
+  app.get('/api/rooms/active', (_req: Request, res: Response) => {
+    const rooms = gameEngine.getActiveRoomsList();
+    res.json({ rooms });
+  });
+
+  // 7. Admin Dashboard & Moderation Endpoints
+  app.get('/api/admin/overview', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const user = token ? storage.getUserBySessionToken(token) : null;
+    if (!user || user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin privilege required.' });
+      return;
+    }
+    const stats = storage.getAdminStats();
+    const rooms = gameEngine.getActiveRoomsList();
+    res.json({ stats, activeRooms: rooms });
+  });
+
+  app.get('/api/admin/users', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const user = token ? storage.getUserBySessionToken(token) : null;
+    if (!user || user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin privilege required.' });
+      return;
+    }
+    const users = storage.getAllUsers(user.id);
+    res.json({ users: users || [] });
+  });
+
+  app.post('/api/admin/ban', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const user = token ? storage.getUserBySessionToken(token) : null;
+    if (!user || user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin privilege required.' });
+      return;
+    }
+    const { targetUserId, isBanned } = req.body || {};
+    if (!targetUserId) {
+      res.status(400).json({ error: 'targetUserId required' });
+      return;
+    }
+    const success = storage.setUserBanStatus(user.id, targetUserId, Boolean(isBanned));
+    res.json({ success });
+  });
+
+  app.get('/api/admin/audit-logs', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const user = token ? storage.getUserBySessionToken(token) : null;
+    if (!user || user.role !== 'admin') {
+      res.status(403).json({ error: 'Admin privilege required.' });
+      return;
+    }
+    const logs = storage.getAuditLogs(user.id);
+    res.json({ logs: logs || [] });
+  });
+
+  // 8. Admin Blocked Words Endpoints
   app.get('/api/admin/blocked-words', (_req: Request, res: Response) => {
     const words = nameFilter.getBlockedWords();
     res.json({ blockedWords: words });
@@ -143,7 +315,7 @@ async function startServer() {
           }
 
           case 'register_global': {
-            const res = gameEngine.registerGlobalPlayer(msg.displayName, ws, msg.sessionId);
+            const res = gameEngine.registerGlobalPlayer(msg.displayName, ws, msg.sessionId, msg.userId);
             if ('error' in res) {
               ws.send(JSON.stringify({ type: 'error', code: 'REGISTER_FAILED', message: res.error }));
               return;
@@ -151,6 +323,16 @@ async function startServer() {
             meta.playerId = res.player.id;
             meta.sessionId = res.player.sessionId;
             socketMetaMap.set(ws, meta);
+            break;
+          }
+
+          case 'join_queue': {
+            gameEngine.joinQueue(ws, msg.displayName, msg.gameMode || 'match-and-collect', msg.userId);
+            break;
+          }
+
+          case 'leave_queue': {
+            gameEngine.leaveQueue(ws);
             break;
           }
 
@@ -182,7 +364,8 @@ async function startServer() {
               msg.displayName,
               msg.gameMode || 'match-and-collect',
               ws,
-              msg.sessionId
+              msg.sessionId,
+              msg.userId
             );
             if ('error' in res) {
               ws.send(JSON.stringify({ type: 'error', code: 'CREATE_FAILED', message: res.error }));
@@ -203,7 +386,7 @@ async function startServer() {
           }
 
           case 'join_room': {
-            const res = gameEngine.joinRoom(msg.roomCode, msg.displayName, ws, msg.sessionId);
+            const res = gameEngine.joinRoom(msg.roomCode, msg.displayName, ws, msg.sessionId, msg.userId);
             if ('error' in res) {
               ws.send(JSON.stringify({ type: 'error', code: 'JOIN_FAILED', message: res.error }));
               return;
@@ -301,6 +484,16 @@ async function startServer() {
             break;
           }
 
+          case 'ready_for_rematch': {
+            if (meta.roomCode && meta.playerId) {
+              const res = gameEngine.readyForRematch(meta.roomCode, meta.playerId);
+              if (!res.success && res.error) {
+                ws.send(JSON.stringify({ type: 'error', code: 'REMATCH_FAILED', message: res.error }));
+              }
+            }
+            break;
+          }
+
           case 'update_settings': {
             if (meta.roomCode && meta.playerId && msg.settings) {
               const res = gameEngine.updateSettings(meta.roomCode, meta.playerId, msg.settings);
@@ -344,6 +537,7 @@ async function startServer() {
     });
 
     ws.on('close', () => {
+      gameEngine.leaveQueue(ws);
       gameEngine.removeGlobalPlayer(ws);
       gameEngine.handleDisconnect(ws);
     });

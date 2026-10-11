@@ -51,6 +51,9 @@ export interface PublicPlayer {
   chorChitthiRoleKnown?: boolean;
   publicRole?: string;
   score?: number;
+  userId?: string;
+  publicPlayerId?: string;
+  avatar?: string;
 }
 
 export interface PrivatePlayerState {
@@ -61,6 +64,9 @@ export interface PrivatePlayerState {
   selectedCardId: string | null;
   chorChitthiRole?: string;
   chorChitthiPoints?: number;
+  userId?: string;
+  publicPlayerId?: string;
+  avatar?: string;
 }
 
 export interface RoomSettings {
@@ -89,6 +95,12 @@ export interface ParticipantResult {
   cardsPassed: number;
   cardsReceived: number;
   matchProgress: string;
+}
+
+export interface SessionPlayerScore {
+  displayName: string;
+  wins: number;
+  gamesPlayed: number;
 }
 
 export interface RoomPublicState {
@@ -138,6 +150,12 @@ export interface RoomPublicState {
       scores: Record<string, number>;
     };
   };
+  /** Which game number this is within the current room session (1, 2, 3, …) */
+  matchNumber?: number;
+  /** Player IDs who have clicked Play Again / ready for next game */
+  rematchReadyIds?: string[];
+  /** Per-player session-level win and games-played counts */
+  sessionScores?: Record<string, SessionPlayerScore>;
 }
 
 export interface MatchResultRecord {
@@ -193,11 +211,11 @@ export interface PlayRequest {
 
 // Client -> Server WS Messages
 export type ClientMessage =
-  | { type: 'register_global'; displayName: string; sessionId?: string }
+  | { type: 'register_global'; displayName: string; sessionId?: string; userId?: string }
   | { type: 'send_invite'; targetPlayerId: string }
   | { type: 'respond_invite'; inviteId: string; accept: boolean }
-  | { type: 'join_room'; roomCode: string; displayName: string; sessionId?: string }
-  | { type: 'create_room'; displayName: string; gameMode: GameMode; sessionId?: string }
+  | { type: 'join_room'; roomCode: string; displayName: string; sessionId?: string; userId?: string }
+  | { type: 'create_room'; displayName: string; gameMode: GameMode; sessionId?: string; userId?: string }
   | { type: 'reconnect'; roomCode: string; sessionId: string; playerId: string }
   | { type: 'toggle_ready' }
   | { type: 'start_game' }
@@ -208,7 +226,10 @@ export type ClientMessage =
   | { type: 'remove_player'; playerId: string }
   | { type: 'lock_room'; locked: boolean }
   | { type: 'next_round' }
+  | { type: 'ready_for_rematch' }
   | { type: 'leave_room' }
+  | { type: 'join_queue'; gameMode: GameMode; displayName: string; userId?: string }
+  | { type: 'leave_queue' }
   | { type: 'ping' };
 
 // Server -> Client WS Messages
@@ -223,6 +244,9 @@ export type ServerMessage =
   | { type: 'match_complete'; winner: RoomPublicState['winner']; results: ParticipantResult[] }
   | { type: 'chor_police_phase'; policeId: string; policeName: string; suspects: { id: string; displayName: string }[] }
   | { type: 'chor_round_ended'; result: NonNullable<RoomPublicState['chorChitthiState']>['roundResult'] }
+  | { type: 'queue_status'; inQueue: boolean; queueLength: number; gameMode: GameMode; estimatedWaitSeconds: number }
+  | { type: 'match_found'; roomCode: string; gameMode: GameMode }
   | { type: 'error'; code: string; message: string }
   | { type: 'notification'; message: string; variant?: 'info' | 'success' | 'warning' | 'error' }
   | { type: 'pong' };
+

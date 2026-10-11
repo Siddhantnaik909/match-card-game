@@ -1,4 +1,112 @@
 {
-  "results": [],
-  "blockedWords": []
+  "results": [
+    {
+      "id": "7e063a28-39b6-4462-9de7-8679ac777f74",
+      "roomId": "e3404f9e-0df0-4fa4-9b13-a4a09b067210",
+      "roomCode": "MATCH-AQBK",
+      "gameMode": "match-and-collect",
+      "playerCount": 5,
+      "winnerId": "7a849efc-3284-439f-8a9c-d38787c96bee",
+      "winnerName": "RocketDesk78",
+      "winningCardType": "headphones",
+      "winningCardName": "Headphones",
+      "detail": "Collected 4 Headphones cards in 23 passes!",
+      "durationMs": 309035,
+      "totalRounds": 23,
+      "totalCardsTransferred": 115,
+      "completedAt": "2026-10-08T17:18:48.669Z",
+      "participants": [
+        {
+          "playerId": "7a849efc-3284-439f-8a9c-d38787c96bee",
+          "displayName": "RocketDesk78",
+          "rank": 1,
+          "status": "winner",
+          "cardsPassed": 7,
+          "cardsReceived": 7,
+          "matchProgress": "4 × Headphones (Matched!)"
+        },
+        {
+          "playerId": "627e406c-29f5-40c3-9e78-296206c148aa",
+          "displayName": "aa",
+          "rank": 2,
+          "status": "completed",
+          "cardsPassed": 7,
+          "cardsReceived": 7,
+          "matchProgress": "3 × Laptop"
+        },
+        {
+          "playerId": "c14b332e-00d3-45e0-a76b-25a7ef4845dc",
+          "displayName": "SwiftFalcon92",
+          "rank": 3,
+          "status": "completed",
+          "cardsPassed": 7,
+          "cardsReceived": 7,
+          "matchProgress": "3 × Task Board"
+        },
+        {
+          "playerId": "7fa77570-503b-4513-9cba-900d73197912",
+          "displayName": "AlphaWolf12",
+          "rank": 4,
+          "status": "completed",
+          "cardsPassed": 8,
+          "cardsReceived": 8,
+          "matchProgress": "3 × Plant"
+        },
+        {
+          "playerId": "00fe462f-cdf6-4c38-8cc0-2408d82bca92",
+          "displayName": "MatrixHawk53",
+          "rank": 5,
+          "status": "completed",
+          "cardsPassed": 6,
+          "cardsReceived": 6,
+          "matchProgress": "2 × Coffee"
+        }
+      ]
+    }
+  ],
+  "blockedWords": [],
+  "users": [
+    {
+      "id": "user-admin-default",
+      "publicPlayerId": "PID-ADMIN01",
+      "username": "admin",
+      "displayName": "Platform Admin",
+      "email": "admin@platform.game",
+      "passwordHash": "7e5f94c40cdd730468942bd4c952e285:de137d9e6a7bc1de16028c205393448207519ec5176e24bf445485a08aaa228d08a56ef144c5f98f59dbfff9fe3455474bfd05f574c65f84d462cf293738d8c5",
+      "avatar": "👑",
+      "role": "admin",
+      "isBanned": false,
+      "createdAt": "2026-10-11T03:40:13.863Z",
+      "lastActive": "2026-10-11T03:40:13.866Z",
+      "stats": {
+        "wins": 10,
+        "losses": 2,
+        "gamesPlayed": 12,
+        "winRate": 83.3,
+        "currentStreak": 4,
+        "bestStreak": 6,
+        "totalCardsPassed": 65,
+        "totalCardsReceived": 62,
+        "rating": 1350
+      },
+      "achievements": [
+        {
+          "id": "ach-first-match",
+          "name": "First Blood",
+          "description": "Complete your first competitive multiplayer match",
+          "icon": "⚔️",
+          "unlockedAt": "2026-10-11T03:40:13.866Z"
+        },
+        {
+          "id": "ach-first-win",
+          "name": "Champion Debut",
+          "description": "Win your first official match",
+          "icon": "🏆",
+          "unlockedAt": "2026-10-11T03:40:13.866Z"
+        }
+      ]
+    }
+  ],
+  "sessions": [],
+  "auditLogs": []
 }

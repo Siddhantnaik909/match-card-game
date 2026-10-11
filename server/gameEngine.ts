@@ -16,6 +16,7 @@ import {
   RoomPublicState,
   RoomSettings,
   ServerMessage,
+  SessionPlayerScore,
 } from '../src/types/game';
 import { DEFAULT_ENABLED_CARD_TYPES, getCardDef } from '../src/utils/cards';
 import { nameFilter } from './nameFilter';
@@ -32,11 +33,16 @@ export interface InternalPlayer {
   hand: GameCard[];
   selectedCardId: string | null;
   hasPassed: boolean;
+  hasFinished: boolean;   // true once this player has matched 4-of-a-kind
+  matchRank: number;      // 1 = first to match, 2 = second, etc.
   cardsPassedCount: number;
   cardsReceivedCount: number;
   chorRole?: string;
   score: number;
   disconnectTimer?: NodeJS.Timeout;
+  userId?: string;
+  publicPlayerId?: string;
+  avatar?: string;
 }
 
 export interface InternalGlobalPlayer {
@@ -45,6 +51,17 @@ export interface InternalGlobalPlayer {
   displayName: string;
   ws: WebSocket;
   status: 'idle' | 'in-room';
+  userId?: string;
+  publicPlayerId?: string;
+  avatar?: string;
+}
+
+export interface QueueEntry {
+  ws: WebSocket;
+  displayName: string;
+  gameMode: GameMode;
+  userId?: string;
+  joinedAt: number;
 }
 
 export interface InternalPlayRequest {
@@ -81,9 +98,20 @@ export interface InternalRoom {
     playerCount: number;
   };
   settings: RoomSettings;
+  finishedPlayerIds: Set<string>; // tracks which players have already matched
   winner?: RoomPublicState['winner'];
   lastMatchResults?: ParticipantResult[];
   chorChitthiState?: RoomPublicState['chorChitthiState'];
+  /** Monotonically-increasing game number within this room session (1-indexed) */
+  matchNumber: number;
+  /** Unique ID for the current match instance — resets each game */
+  matchId: string;
+  /** Player IDs who have clicked Play Again after a game ends */
+  rematchReadyIds: Set<string>;
+  /** Session-level win/game counts, keyed by playerId */
+  sessionScores: Map<string, SessionPlayerScore>;
+  /** Guard: prevents duplicate rematch starts from race conditions */
+  rematchStarting: boolean;
 }
 
 export class GameEngine {
@@ -91,10 +119,119 @@ export class GameEngine {
   private sessionToRoom: Map<string, string> = new Map(); // sessionId -> roomCode
   private globalPlayers: Map<string, InternalGlobalPlayer> = new Map(); // playerId -> InternalGlobalPlayer
   private activeInvites: Map<string, InternalPlayRequest> = new Map(); // inviteId -> InternalPlayRequest
+  private matchmakingQueues: Map<GameMode, QueueEntry[]> = new Map([
+    ['match-and-collect', []],
+    ['chor-chitthi', []],
+  ]);
 
   constructor() {
     // Periodically clean up stale/abandoned rooms
     setInterval(() => this.cleanupAbandonedRooms(), 60000);
+    // Periodically process matchmaking queue
+    setInterval(() => this.processMatchmaking(), 2000);
+  }
+
+  // --- MATCHMAKING SYSTEM ---
+  public joinQueue(ws: WebSocket, displayName: string, gameMode: GameMode, userId?: string): void {
+    // Remove if already in queue
+    this.leaveQueue(ws);
+
+    const queue = this.matchmakingQueues.get(gameMode) || [];
+    const entry: QueueEntry = {
+      ws,
+      displayName: displayName.trim(),
+      gameMode,
+      userId,
+      joinedAt: Date.now(),
+    };
+    queue.push(entry);
+    this.matchmakingQueues.set(gameMode, queue);
+
+    this.sendQueueStatus(ws, true, queue.length, gameMode);
+    this.broadcastQueueUpdates(gameMode);
+    this.processMatchmaking();
+  }
+
+  public leaveQueue(ws: WebSocket): void {
+    for (const [mode, queue] of this.matchmakingQueues.entries()) {
+      const idx = queue.findIndex((e) => e.ws === ws);
+      if (idx !== -1) {
+        queue.splice(idx, 1);
+        this.sendQueueStatus(ws, false, 0, mode);
+        this.broadcastQueueUpdates(mode);
+        break;
+      }
+    }
+  }
+
+  private sendQueueStatus(ws: WebSocket, inQueue: boolean, queueLength: number, gameMode: GameMode): void {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({
+          type: 'queue_status',
+          inQueue,
+          queueLength,
+          gameMode,
+          estimatedWaitSeconds: Math.max(5, (4 - queueLength) * 4),
+        })
+      );
+    }
+  }
+
+  private broadcastQueueUpdates(gameMode: GameMode): void {
+    const queue = this.matchmakingQueues.get(gameMode) || [];
+    for (const entry of queue) {
+      this.sendQueueStatus(entry.ws, true, queue.length, gameMode);
+    }
+  }
+
+  private processMatchmaking(): void {
+    for (const [mode, queue] of this.matchmakingQueues.entries()) {
+      // Clean disconnected sockets
+      const active = queue.filter((e) => e.ws.readyState === WebSocket.OPEN);
+      this.matchmakingQueues.set(mode, active);
+
+      // Match-and-collect requires min 4 players to auto-start match, or 2 if players have waited > 20s
+      const required = 4;
+      if (active.length >= required) {
+        const matched = active.splice(0, required);
+        this.matchmakingQueues.set(mode, active);
+
+        // Auto-create room for matched players
+        const host = matched[0];
+        const createRes = this.createRoom(host.displayName, mode, host.ws, undefined, host.userId);
+        if ('error' in createRes) continue;
+
+        const { room } = createRes;
+        // Join the rest of the players
+        for (let i = 1; i < matched.length; i++) {
+          const p = matched[i];
+          this.joinRoom(room.roomCode, p.displayName, p.ws, undefined, p.userId);
+        }
+
+        // Notify all matched players of match found
+        for (const p of matched) {
+          if (p.ws.readyState === WebSocket.OPEN) {
+            p.ws.send(JSON.stringify({ type: 'match_found', roomCode: room.roomCode, gameMode: mode }));
+          }
+        }
+
+        // Broadcast room state to all in room
+        this.broadcastRoom(room);
+        this.broadcastPrivateStates(room);
+      }
+    }
+  }
+
+  public getActiveRoomsList() {
+    return Array.from(this.rooms.values()).map((r) => ({
+      roomCode: r.roomCode,
+      gameMode: r.gameMode,
+      status: r.status,
+      playerCount: r.players.filter((p) => p.connected).length,
+      maxPlayers: r.settings.maxPlayers,
+      isLocked: r.isLocked,
+    }));
   }
 
   private generateRoomCode(): string {
@@ -112,7 +249,7 @@ export class GameEngine {
 
   // --- GLOBAL PLAYER LOGIC ---
 
-  public registerGlobalPlayer(displayName: string, ws: WebSocket, clientSessionId?: string): { player: InternalGlobalPlayer } | { error: string } {
+  public registerGlobalPlayer(displayName: string, ws: WebSocket, clientSessionId?: string, userId?: string): { player: InternalGlobalPlayer } | { error: string } {
     const val = nameFilter.validate(displayName);
     if (!val.valid) {
       return { error: val.error || 'Name Not Allowed' };
@@ -121,12 +258,18 @@ export class GameEngine {
     const playerId = this.generateId();
     const sessionId = clientSessionId || this.generateId();
     
+    // Check if user is registered in storage
+    const userAccount = userId ? storage.getUserById(userId) : null;
+
     const globalPlayer: InternalGlobalPlayer = {
       id: playerId,
       sessionId,
       displayName: displayName.trim(),
       ws,
       status: 'idle',
+      userId: userAccount?.id,
+      publicPlayerId: userAccount?.publicPlayerId,
+      avatar: userAccount?.avatar || '🎮',
     };
 
     this.globalPlayers.set(playerId, globalPlayer);
@@ -230,7 +373,8 @@ export class GameEngine {
     displayName: string,
     gameMode: GameMode = 'match-and-collect',
     ws: WebSocket,
-    clientSessionId?: string
+    clientSessionId?: string,
+    userId?: string
   ): { room: InternalRoom; player: InternalPlayer } | { error: string } {
     const val = nameFilter.validate(displayName);
     if (!val.valid) {
@@ -244,6 +388,7 @@ export class GameEngine {
 
     const playerId = this.generateId();
     const sessionId = clientSessionId || this.generateId();
+    const userAccount = userId ? storage.getUserById(userId) : null;
 
     const hostPlayer: InternalPlayer = {
       id: playerId,
@@ -256,9 +401,14 @@ export class GameEngine {
       hand: [],
       selectedCardId: null,
       hasPassed: false,
+      hasFinished: false,
+      matchRank: 0,
       cardsPassedCount: 0,
       cardsReceivedCount: 0,
       score: 0,
+      userId: userAccount?.id,
+      publicPlayerId: userAccount?.publicPlayerId,
+      avatar: userAccount?.avatar || '👑',
     };
 
     const room: InternalRoom = {
@@ -289,6 +439,13 @@ export class GameEngine {
           losingRole: 'chor',
         },
       },
+      finishedPlayerIds: new Set<string>(),
+      // Phase 4.1 session fields
+      matchNumber: 1,
+      matchId: this.generateId(),
+      rematchReadyIds: new Set<string>(),
+      sessionScores: new Map<string, SessionPlayerScore>(),
+      rematchStarting: false,
     };
 
     this.rooms.set(roomCode, room);
@@ -301,7 +458,8 @@ export class GameEngine {
     roomCode: string,
     displayName: string,
     ws: WebSocket,
-    clientSessionId?: string
+    clientSessionId?: string,
+    userId?: string
   ): { room: InternalRoom; player: InternalPlayer } | { error: string } {
     const cleanCode = roomCode.toUpperCase().trim();
     const room = this.rooms.get(cleanCode);
@@ -333,6 +491,7 @@ export class GameEngine {
 
     const playerId = this.generateId();
     const sessionId = clientSessionId || this.generateId();
+    const userAccount = userId ? storage.getUserById(userId) : null;
 
     const newPlayer: InternalPlayer = {
       id: playerId,
@@ -345,9 +504,14 @@ export class GameEngine {
       hand: [],
       selectedCardId: null,
       hasPassed: false,
+      hasFinished: false,
+      matchRank: 0,
       cardsPassedCount: 0,
       cardsReceivedCount: 0,
       score: 0,
+      userId: userAccount?.id,
+      publicPlayerId: userAccount?.publicPlayerId,
+      avatar: userAccount?.avatar || '🎮',
     };
 
     room.players.push(newPlayer);
@@ -623,6 +787,7 @@ export class GameEngine {
   }
 
   private startPassTimer(room: InternalRoom): void {
+    console.log(`[TURN_START] Room ${room.roomCode} started pass timer for round ${room.currentRound}, pass ${room.passesInRound + 1}`);
     if (room.passTimer) {
       clearInterval(room.passTimer);
       room.passTimer = undefined;
@@ -642,6 +807,7 @@ export class GameEngine {
       r.passTimerRemaining = remaining;
 
       if (remaining <= 0) {
+        console.log(`[TIMEOUT] Room ${room.roomCode} pass timer reached 0`);
         if (r.passTimer) clearInterval(r.passTimer);
         r.passTimer = undefined;
         // Lock and auto-pass for anyone who hasn't clicked Pass yet
@@ -672,6 +838,7 @@ export class GameEngine {
     }
 
     player.selectedCardId = cardId;
+    console.log(`[PLAYER_MOVE] Player ${player.displayName} (${playerId}) selected a card`);
     this.sendPrivateState(player);
     this.broadcastRoom(room);
 
@@ -696,6 +863,7 @@ export class GameEngine {
     }
 
     player.hasPassed = true;
+    console.log(`[PASS] Player ${player.displayName} (${playerId}) locked in their pass`);
     this.broadcastRoom(room);
 
     // Check if ALL active connected players have submitted their pass
@@ -716,9 +884,6 @@ export class GameEngine {
   private forcePassUnselectedPlayers(room: InternalRoom): void {
     for (const player of room.players) {
       if (!player.hasPassed) {
-        if (!player.selectedCardId && player.hand.length > 0) {
-          player.selectedCardId = player.hand[0].id;
-        }
         player.hasPassed = true;
       }
     }
@@ -751,31 +916,42 @@ export class GameEngine {
         const cardIdx = p.hand.findIndex((c) => c.id === p.selectedCardId);
         if (cardIdx !== -1) {
           passedCards[i] = p.hand.splice(cardIdx, 1)[0];
-        } else if (p.hand.length > 0) {
-          passedCards[i] = p.hand.pop() || null;
+          p.cardsPassedCount += 1;
         } else {
           passedCards[i] = null;
         }
-        p.cardsPassedCount += 1;
       }
 
-      // Determine receiver indices according to direction
+      // Determine receiver indices according to direction for participating players
       const direction = r.settings.direction;
       const receivedCardsPerPlayer: (GameCard | null)[] = new Array(numPlayers).fill(null);
 
+      const participatingIndices: number[] = [];
       for (let i = 0; i < numPlayers; i++) {
-        let targetIdx = 0;
-        if (direction === 'clockwise') {
-          // P1 -> P2 -> ... -> P_N -> P1
-          targetIdx = (i + 1) % numPlayers;
-        } else if (direction === 'counter-clockwise') {
-          // P1 -> P_N -> ... -> P2 -> P1
-          targetIdx = (i - 1 + numPlayers) % numPlayers;
-        } else {
-          // Random offset cycle
-          targetIdx = (i + 1) % numPlayers;
+        if (passedCards[i] !== null) {
+          participatingIndices.push(i);
         }
-        receivedCardsPerPlayer[targetIdx] = passedCards[i];
+      }
+
+      const numParticipating = participatingIndices.length;
+      if (numParticipating > 1) {
+        for (let i = 0; i < numParticipating; i++) {
+          const giverIdx = participatingIndices[i];
+          let receiverIndexInArray = 0;
+
+          if (direction === 'clockwise' || direction === 'random') {
+            receiverIndexInArray = (i + 1) % numParticipating;
+          } else if (direction === 'counter-clockwise') {
+            receiverIndexInArray = (i - 1 + numParticipating) % numParticipating;
+          }
+
+          const targetIdx = participatingIndices[receiverIndexInArray];
+          receivedCardsPerPlayer[targetIdx] = passedCards[giverIdx];
+        }
+      } else if (numParticipating === 1) {
+        // If only one player passed, return their card to them to maintain 4-card invariant
+        const soloIdx = participatingIndices[0];
+        receivedCardsPerPlayer[soloIdx] = passedCards[soloIdx];
       }
 
       // Phase: RECEIVE
@@ -810,6 +986,8 @@ export class GameEngine {
 
         rCheck.phase = 'check';
         this.broadcastRoom(rCheck);
+        
+        console.log(`[TURN_END] Room ${rCheck.roomCode} pass evaluated`);
 
         const winnerFound = this.checkForMatchAndCollectWinner(rCheck);
 
@@ -824,105 +1002,115 @@ export class GameEngine {
   }
 
   private checkForMatchAndCollectWinner(room: InternalRoom): boolean {
-    const winners: InternalPlayer[] = [];
+    const activePlayers = room.players.filter(p => p.connected);
+    let newlyFinished = false;
 
-    // Check all players
+    // Check all players who haven't finished yet for a 4-of-a-kind match
     for (const player of room.players) {
+      if (player.hasFinished) continue;
       if (player.hand.length === 4) {
         const firstType = player.hand[0].type;
         const isMatch = player.hand.every((c) => c.type === firstType);
         if (isMatch) {
-          winners.push(player);
+          player.hasFinished = true;
+          room.finishedPlayerIds.add(player.id);
+          player.matchRank = room.finishedPlayerIds.size;
+          player.score += Math.max(1, activePlayers.length - player.matchRank + 1);
+          newlyFinished = true;
+
+          const cardDef = getCardDef(player.hand[0].type);
+          console.log(`[PLAYER_MATCH] ${player.displayName} matched 4x${cardDef.name} — rank #${player.matchRank}`);
+
+          // Announce this player's match to everyone, but don't end the game yet
+          this.broadcastAll(room, {
+            type: 'player_matched',
+            playerId: player.id,
+            playerName: player.displayName,
+            cardType: player.hand[0].type,
+            cardName: cardDef.name,
+            rank: player.matchRank,
+          } as any);
+
+          // First person to match is the "round winner" for display purposes
+          if (player.matchRank === 1) {
+            const duration = room.roundStartedAt ? Date.now() - room.roundStartedAt : 0;
+            room.winner = {
+              playerId: player.id,
+              playerName: player.displayName,
+              cardType: player.hand[0].type,
+              cardName: cardDef.name,
+              totalPasses: room.passesInRound,
+              durationMs: duration,
+            };
+          }
         }
       }
     }
 
-    if (winners.length > 0) {
-      const primaryWinner = winners[0];
-      const cardDef = getCardDef(primaryWinner.hand[0].type);
-      const duration = room.roundStartedAt ? Date.now() - room.roundStartedAt : 0;
+    // Check if all connected players have now finished
+    const unfinishedConnected = activePlayers.filter(p => !p.hasFinished);
+    const allDone = unfinishedConnected.length === 0 || (unfinishedConnected.length === 1 && activePlayers.length > 1);
 
+    if (allDone && room.finishedPlayerIds.size > 0) {
+      // End the round – everyone has matched (or only 1 player remains unmatched)
       room.status = 'round-ended';
       if (room.passTimer) {
         clearInterval(room.passTimer);
         room.passTimer = undefined;
       }
 
-      room.winner = {
-        playerId: primaryWinner.id,
-        playerName: primaryWinner.displayName,
-        cardType: primaryWinner.hand[0].type,
-        cardName: cardDef.name,
-        totalPasses: room.passesInRound,
-        durationMs: duration,
-      };
+      console.log(`[ROUND_END] Room ${room.roomCode} – all players finished. Building leaderboard.`);
 
-      primaryWinner.score += 1;
-
-      // Calculate placement & stats for EVERY participating player
+      // Build final sorted leaderboard
       const sortedParticipants: ParticipantResult[] = room.players
         .map((p) => {
-          // Count highest frequency of any single card type in hand
           const typeCounts: Record<string, number> = {};
-          for (const c of p.hand) {
-            typeCounts[c.type] = (typeCounts[c.type] || 0) + 1;
-          }
+          for (const c of p.hand) typeCounts[c.type] = (typeCounts[c.type] || 0) + 1;
           const maxSame = Math.max(...Object.values(typeCounts), 1);
           const topCardType = Object.keys(typeCounts).find((k) => typeCounts[k] === maxSame) || 'unknown';
           const topDef = getCardDef(topCardType);
-
-          const isWin = p.id === primaryWinner.id;
+          const cardDef = p.hasFinished ? getCardDef(p.hand[0].type) : topDef;
           return {
             playerId: p.id,
             displayName: p.displayName,
-            rank: isWin ? 1 : 2, // will be ranked after sorting
-            status: isWin ? ('winner' as const) : ('completed' as const),
+            rank: p.hasFinished ? p.matchRank : activePlayers.length + 1,
+            status: (p.matchRank === 1 ? 'winner' : p.hasFinished ? 'completed' : 'completed') as ParticipantResult['status'],
             cardsPassed: p.cardsPassedCount,
             cardsReceived: p.cardsReceivedCount,
-            matchProgress: isWin
+            matchProgress: p.hasFinished
               ? `4 × ${cardDef.name} (Matched!)`
               : `${maxSame} × ${topDef.name}`,
             maxSame,
           };
         })
-        .sort((a, b) => {
-          if (a.status === 'winner') return -1;
-          if (b.status === 'winner') return 1;
-          // Sort remaining players by progress (most matching cards first)
-          return b.maxSame - a.maxSame;
-        })
-        .map((p, index) => ({
-          playerId: p.playerId,
-          displayName: p.displayName,
-          rank: index + 1,
-          status: p.status,
-          cardsPassed: p.cardsPassed,
-          cardsReceived: p.cardsReceived,
-          matchProgress: p.matchProgress,
-        }));
+        .sort((a, b) => a.rank - b.rank);
 
       room.lastMatchResults = sortedParticipants;
 
-      // Save complete match record in persistent storage
-      storage.recordMatchResult({
-        id: this.generateId(),
-        roomId: room.id,
-        roomCode: room.roomCode,
-        gameMode: 'match-and-collect',
-        playerCount: room.players.length,
-        winnerId: primaryWinner.id,
-        winnerName: primaryWinner.displayName,
-        winningCardType: primaryWinner.hand[0].type,
-        winningCardName: cardDef.name,
-        detail: `Collected 4 ${cardDef.name} cards in ${room.passesInRound} passes!`,
-        durationMs: duration,
-        totalRounds: room.currentRound,
-        totalCardsTransferred: room.passesInRound * room.players.length,
-        completedAt: new Date().toISOString(),
-        participants: sortedParticipants,
-      });
+      // Persist the match result
+      if (room.winner) {
+        const primaryWinner = room.players.find(p => p.matchRank === 1)!;
+        const cardDef = getCardDef(primaryWinner.hand[0].type);
+        const duration = room.roundStartedAt ? Date.now() - room.roundStartedAt : 0;
+        storage.recordMatchResult({
+          id: this.generateId(),
+          roomId: room.id,
+          roomCode: room.roomCode,
+          gameMode: 'match-and-collect',
+          playerCount: room.players.length,
+          winnerId: primaryWinner.id,
+          winnerName: primaryWinner.displayName,
+          winningCardType: primaryWinner.hand[0].type,
+          winningCardName: cardDef.name,
+          detail: `Collected 4 ${cardDef.name} cards in ${room.passesInRound} passes!`,
+          durationMs: duration,
+          totalRounds: room.currentRound,
+          totalCardsTransferred: room.passesInRound * room.players.length,
+          completedAt: new Date().toISOString(),
+          participants: sortedParticipants,
+        });
+      }
 
-      // Broadcast completion with full rankings
       this.broadcastAll(room, {
         type: 'match_complete',
         winner: room.winner,
@@ -931,6 +1119,11 @@ export class GameEngine {
 
       this.broadcastRoom(room);
       return true;
+    }
+
+    // Game continues – broadcast updated room so new rank badges are visible
+    if (newlyFinished) {
+      this.broadcastRoom(room);
     }
 
     return false;
@@ -1099,27 +1292,115 @@ export class GameEngine {
       return { success: false, error: 'Only the host can start the next round.' };
     }
 
-    room.currentRound += 1;
+    // Guard against double-start
+    if (room.status !== 'round-ended') {
+      return { success: false, error: 'No completed game to start a new round from.' };
+    }
+
+    console.log(`[NEXT_ROUND] Room ${room.roomCode} moving to next game by host ${hostPlayerId}`);
+
+    this.beginNextGame(room);
+    return { success: true };
+  }
+
+  /**
+   * Phase 4.1: Any player can mark themselves as ready for a rematch.
+   * When ALL connected players are ready, the next game starts automatically.
+   * The host can also force-start via next_round at any time.
+   */
+  public readyForRematch(roomCode: string, playerId: string): { success: boolean; error?: string } {
+    const room = this.rooms.get(roomCode);
+    if (!room) return { success: false, error: 'Room not found.' };
+
+    if (room.status !== 'round-ended') {
+      return { success: false, error: 'No completed game to rematch from.' };
+    }
+
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { success: false, error: 'Player not found.' };
+
+    // Idempotent: toggling off is intentional
+    if (room.rematchReadyIds.has(playerId)) {
+      room.rematchReadyIds.delete(playerId);
+      this.broadcastRoom(room);
+      return { success: true };
+    }
+
+    room.rematchReadyIds.add(playerId);
+    this.broadcastRoom(room);
+
+    // Auto-start: all connected players are ready
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    const allReady =
+      connectedPlayers.length >= room.settings.minPlayers &&
+      connectedPlayers.every((p) => room.rematchReadyIds.has(p.id));
+
+    if (allReady && !room.rematchStarting) {
+      room.rematchStarting = true;
+      console.log(`[REMATCH] Room ${room.roomCode} auto-starting next game — all ${connectedPlayers.length} players ready.`);
+      this.broadcastNotification(room, 'All players ready! Starting next game...', 'success');
+      // Short delay so clients can see the "all ready" state
+      setTimeout(() => {
+        const r = this.rooms.get(roomCode);
+        if (r && r.status === 'round-ended') {
+          this.beginNextGame(r);
+        }
+      }, 1500);
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Phase 4.1: Transitions the room from round-ended to the next game's lobby,
+   * preserving room membership and accumulating session scores.
+   */
+  private beginNextGame(room: InternalRoom): void {
+    // Accumulate session scores from the completed game
+    for (const p of room.players) {
+      if (!room.sessionScores.has(p.id)) {
+        room.sessionScores.set(p.id, { displayName: p.displayName, wins: 0, gamesPlayed: 0 });
+      }
+      const stat = room.sessionScores.get(p.id)!;
+      stat.gamesPlayed += 1;
+      if (p.matchRank === 1) {
+        stat.wins += 1;
+      }
+    }
+
+    // Advance game counter
+    room.matchNumber += 1;
+    room.matchId = this.generateId();
+    room.currentRound = 1;
     room.status = 'lobby';
     room.phase = 'select';
     room.winner = undefined;
     room.chorChitthiState = undefined;
     room.isLocked = false;
     room.cinematicState = undefined;
+    room.finishedPlayerIds = new Set<string>();
+    room.passesInRound = 0;
+    room.rematchReadyIds = new Set<string>();
+    room.rematchStarting = false;
 
     for (const p of room.players) {
       p.hand = [];
       p.selectedCardId = null;
       p.hasPassed = false;
+      p.hasFinished = false;
+      p.matchRank = 0;
       p.ready = false;
       p.chorRole = undefined;
+      // NOTE: p.score accumulates across rounds within the same game session
     }
 
     this.broadcastRoom(room);
     this.broadcastPrivateStates(room);
-    this.broadcastNotification(room, `Round ${room.currentRound} lobby opened. Ready up!`, 'info');
-
-    return { success: true };
+    this.broadcastNotification(
+      room,
+      `Game ${room.matchNumber} lobby opened. Ready up for the next match!`,
+      'info'
+    );
   }
 
   public updateSettings(
@@ -1193,6 +1474,8 @@ export class GameEngine {
         ready: p.ready,
         connected: p.connected,
         hasPassed: p.hasPassed,
+        hasFinished: p.hasFinished,
+        matchRank: p.matchRank,
         cardCount: p.hand.length,
         status,
         cardsPassedCount: p.cardsPassedCount,
@@ -1205,6 +1488,9 @@ export class GameEngine {
             ? 'Police'
             : undefined,
         score: p.score,
+        userId: p.userId,
+        publicPlayerId: p.publicPlayerId,
+        avatar: p.avatar,
       };
     });
 
@@ -1229,6 +1515,10 @@ export class GameEngine {
       winner: room.winner,
       lastMatchResults: room.lastMatchResults,
       chorChitthiState: room.chorChitthiState,
+      // Phase 4.1 session fields
+      matchNumber: room.matchNumber,
+      rematchReadyIds: Array.from(room.rematchReadyIds),
+      sessionScores: Object.fromEntries(room.sessionScores),
     });
   }
 
@@ -1257,6 +1547,9 @@ export class GameEngine {
       selectedCardId: player.selectedCardId,
       chorChitthiRole: player.chorRole,
       chorChitthiPoints: player.score,
+      userId: player.userId,
+      publicPlayerId: player.publicPlayerId,
+      avatar: player.avatar,
     });
 
     this.sendWs(player.ws, {

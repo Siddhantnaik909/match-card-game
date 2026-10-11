@@ -44,6 +44,8 @@ export interface PublicPlayer {
   ready: boolean;
   connected: boolean;
   hasPassed: boolean;
+  hasFinished: boolean;
+  matchRank: number;
   cardCount: number;
   status: PlayerActionStatus;
   cardsPassedCount?: number;
@@ -241,6 +243,7 @@ export type ServerMessage =
   | { type: 'private_state'; state: PrivatePlayerState }
   | { type: 'phase_change'; phase: GamePhase; message?: string }
   | { type: 'cards_exchanged'; receivedCard: GameCard }
+  | { type: 'player_matched'; playerId: string; playerName: string; cardType: string; cardName: string; rank: number }
   | { type: 'match_complete'; winner: RoomPublicState['winner']; results: ParticipantResult[] }
   | { type: 'chor_police_phase'; policeId: string; policeName: string; suspects: { id: string; displayName: string }[] }
   | { type: 'chor_round_ended'; result: NonNullable<RoomPublicState['chorChitthiState']>['roundResult'] }

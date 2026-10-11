@@ -23,7 +23,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ isOpen, onClose 
     { title: 'PASS', desc: 'All players pass their card simultaneously around the table.' },
     { title: 'RECEIVE', desc: 'Receive one card from your neighbor to keep your hand at 4 cards.' },
     { title: 'CHECK FOR 4 MATCHING CARDS', desc: 'Server checks if any player holds four identical cards.' },
-    { title: 'WIN', desc: 'The first player to match four of a kind wins the game instantly!' },
+    { title: 'FINISH & RANK', desc: 'The first player to match takes first place. Matched hands lock; everyone else keeps playing until all players match. Then the final rankings appear.' },
   ];
 
   return (
@@ -114,8 +114,8 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ isOpen, onClose 
               <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300 leading-relaxed">
                 <p>
                   <strong>Summary:</strong> Everyone starts with four cards. Select one card and pass it.
-                  Receive one card from another player. Continue until someone has four identical cards.
-                  The first player to match four wins.
+                  Receive one card from another unfinished player. Your hand locks when you match four identical cards.
+                  The first to match takes first place, but the game continues until everyone matches.
                 </p>
               </div>
             </>

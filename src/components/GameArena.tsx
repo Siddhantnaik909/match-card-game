@@ -63,7 +63,7 @@ const ARENA_STEPS: StepDefinition[] = [
     stepNumber: 4,
     label: 'CHECK',
     shortDesc: '4-Match Evaluation',
-    guidance: 'Server evaluating all decks for 4 identical cards to crown the winner!',
+    guidance: 'Checking for new matches. Play continues until everyone has matched!',
   },
 ];
 
@@ -77,27 +77,28 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
   const isUrgent = passTimer <= 3 && currentPhase === 'select';
 
   // Count players who have locked in their card
-  const passedCount = players.filter((p) => p.hasPassed).length;
+  const passingPlayers = players.filter((p) => !p.hasFinished);
+  const passedCount = passingPlayers.filter((p) => p.hasPassed).length;
 
   // Find player's position and immediate passing neighbors
-  const myIndex = players.findIndex((p) => p.id === currentPlayerId);
+  const myIndex = passingPlayers.findIndex((p) => p.id === currentPlayerId);
   const passDirection = room.direction || 'clockwise';
 
   let passesToIndex = -1;
   let receivesFromIndex = -1;
 
-  if (myIndex !== -1 && numPlayers > 1) {
+  if (myIndex !== -1 && passingPlayers.length > 1) {
     if (passDirection === 'clockwise') {
-      passesToIndex = (myIndex + 1) % numPlayers;
-      receivesFromIndex = (myIndex - 1 + numPlayers) % numPlayers;
+      passesToIndex = (myIndex + 1) % passingPlayers.length;
+      receivesFromIndex = (myIndex - 1 + passingPlayers.length) % passingPlayers.length;
     } else {
-      passesToIndex = (myIndex - 1 + numPlayers) % numPlayers;
-      receivesFromIndex = (myIndex + 1) % numPlayers;
+      passesToIndex = (myIndex - 1 + passingPlayers.length) % passingPlayers.length;
+      receivesFromIndex = (myIndex + 1) % passingPlayers.length;
     }
   }
 
-  const passesToPlayer = passesToIndex !== -1 ? players[passesToIndex] : null;
-  const receivesFromPlayer = receivesFromIndex !== -1 ? players[receivesFromIndex] : null;
+  const passesToPlayer = passesToIndex !== -1 ? passingPlayers[passesToIndex] : null;
+  const receivesFromPlayer = receivesFromIndex !== -1 ? passingPlayers[receivesFromIndex] : null;
 
   // Step Progress mapping (0 to 3)
   const effectiveStepId = currentPhase === 'lock' ? 'transfer' : currentPhase;

@@ -10,7 +10,7 @@ A production-grade, real-time multiplayer office card game and social deduction 
    - **4–30 Players**: Real connected players only (zero bots, zero simulated players).
    - **4 Cards Per Player**: Players deal cards, select exactly 1 card to pass, receive 1 card each cycle.
    - **Real-Time Passing**: Simultaneous server-authoritative card passing (clockwise, counter-clockwise, or random cycle).
-   - **4-of-a-Kind Victory**: The first player to match four identical cards immediately wins the round!
+    - **4-of-a-Kind Rankings**: The first player to match four identical cards takes first place. Matched hands lock and leave the passing ring; everyone else continues until all remaining players have matched. Only then are final rankings shown and saved.
 
 2. **Chor-Chitthi**:
    - **Hidden Role Social Deduction**: Secretly deals roles (Raja, Rani, Police, Chor, Praja).
@@ -159,8 +159,9 @@ If you prefer not to use the Blueprint:
    - Each player receives 1 card, maintaining exactly 4 cards.
 4. **Win Condition & Celebration**:
    - Continue passing until a player collects 4 identical cards (e.g. 4 Laptops).
-   - Server halts game immediately, triggers confetti burst, and announces *"MATCH COMPLETE! Siddhant collected 4 Laptop cards!"*.
-   - Result is permanently saved to persistent storage.
+    - Server announces each player's match and finishing rank, locks their hand, and continues passing among unmatched players.
+    - Final rankings and the winner celebration appear only after every remaining player has four matching cards.
+    - The completed result is permanently saved to persistent storage.
 5. **Chor-Chitthi Mode**:
    - Host starts a Chor-Chitthi lobby.
    - Players click their secret chit to unfold role.

@@ -40,6 +40,8 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
   const selectedCardId = privatePlayer?.selectedCardId;
   const hasSelected = Boolean(selectedCardId);
   const hasPassed = Boolean(me?.hasPassed);
+  const hasFinished = Boolean(me?.hasFinished);
+  const remainingPlayers = room.players.filter(p => !p.hasFinished).length;
   const currentPhase = room.phase || 'select';
 
   const selectedCard = hand.find((c) => c.id === selectedCardId);
@@ -68,7 +70,11 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
             </div>
 
             <div className="text-xs sm:text-sm font-medium mt-1">
-              {hasPassed ? (
+              {hasFinished ? (
+                <span className="text-emerald-400 font-semibold">
+                  Matched! Place #{me?.matchRank}. Your cards are locked. Waiting for {remainingPlayers} remaining {remainingPlayers === 1 ? 'player' : 'players'} — final rankings appear when everyone matches.
+                </span>
+              ) : hasPassed ? (
                 <span className="text-amber-400 font-semibold flex items-center gap-1.5 animate-pulse">
                   <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span>
@@ -101,16 +107,21 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
           <div className="shrink-0">
             <button
               onClick={onPassCard}
-              disabled={!hasSelected || hasPassed || currentPhase !== 'select'}
+              disabled={hasFinished || !hasSelected || hasPassed || currentPhase !== 'select'}
               className={`w-full sm:w-auto min-h-[48px] px-8 py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all transform duration-200 ${
-                hasPassed
+                hasPassed || hasFinished
                   ? 'bg-slate-800/90 text-slate-400 cursor-not-allowed border border-slate-700/60'
                   : hasSelected
                   ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-[0_0_30px_rgba(251,191,36,0.45)] hover:scale-105 active:scale-95 cursor-pointer ring-2 ring-amber-400/50'
                   : 'bg-slate-900 text-slate-500 cursor-not-allowed border border-slate-800'
               }`}
             >
-              {hasPassed ? (
+              {hasFinished ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Matched · #{me?.matchRank}</span>
+                </>
+              ) : hasPassed ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-amber-400" />
                   <span>Card Locked In</span>
@@ -137,8 +148,8 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
                 cardId={card.id}
                 cardType={card.type}
                 isSelected={isSelected}
-                onSelect={() => !hasPassed && currentPhase === 'select' && onSelectCard(card.id)}
-                disabled={hasPassed || currentPhase !== 'select'}
+                onSelect={() => !hasFinished && !hasPassed && currentPhase === 'select' && onSelectCard(card.id)}
+                disabled={hasFinished || hasPassed || currentPhase !== 'select'}
                 isNew={isNew}
                 dealIndex={idx}
               />
@@ -150,7 +161,7 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
         <div className="mt-8 pt-4 border-t border-slate-800/70 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
           <div className="flex items-center gap-1.5 font-medium">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Victory Objective: Collect 4 identical cards to win immediately.</span>
+            <span>Collect 4 identical cards to secure your place. The game continues until everyone matches.</span>
           </div>
 
           <span className="font-mono text-[11px] text-slate-500">

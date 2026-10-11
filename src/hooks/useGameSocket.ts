@@ -257,6 +257,11 @@ export function useGameSocket() {
               break;
             }
 
+            case 'player_matched': {
+              addToast(`${msg.playerName} matched 4 ${msg.cardName} cards — place #${msg.rank}. Play continues!`, 'success');
+              break;
+            }
+
             case 'match_complete': {
               sound.playVictory();
               setRoom((prev) =>

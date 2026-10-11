@@ -735,6 +735,7 @@ export class GameEngine {
   // --- MATCH & COLLECT: DYNAMIC 4–30 PLAYERS ---
   private initMatchAndCollect(room: InternalRoom): void {
     const numPlayers = room.players.length;
+    room.finishedPlayerIds.clear();
 
     // Pick exactly numPlayers distinct card types from available pool
     const pool = [...room.settings.enabledCards];
@@ -773,6 +774,8 @@ export class GameEngine {
       player.hand = deck.slice(pIdx * 4, pIdx * 4 + 4);
       player.selectedCardId = null;
       player.hasPassed = false;
+      player.hasFinished = false;
+      player.matchRank = 0;
     }
 
     room.phase = 'select';
@@ -798,7 +801,7 @@ export class GameEngine {
 
     room.passTimer = setInterval(() => {
       const r = this.rooms.get(room.roomCode);
-      if (!r || r.status !== 'in-progress' || r.winner) {
+      if (!r || r.status !== 'in-progress') {
         if (room.passTimer) clearInterval(room.passTimer);
         return;
       }
@@ -821,12 +824,13 @@ export class GameEngine {
 
   public selectCard(roomCode: string, playerId: string, cardId: string): { success: boolean; error?: string } {
     const room = this.rooms.get(roomCode);
-    if (!room || room.status !== 'in-progress' || room.winner || room.phase !== 'select') {
+    if (!room || room.status !== 'in-progress' || room.phase !== 'select') {
       return { success: false, error: 'Cannot select card in current state.' };
     }
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player) return { success: false, error: 'Player not found.' };
+    if (player.hasFinished) return { success: false, error: 'You have already matched. Wait for the remaining players.' };
 
     if (player.hasPassed) {
       return { success: false, error: 'Card already locked for passing this round.' };
@@ -847,12 +851,13 @@ export class GameEngine {
 
   public passCard(roomCode: string, playerId: string): { success: boolean; error?: string } {
     const room = this.rooms.get(roomCode);
-    if (!room || room.status !== 'in-progress' || room.winner || room.phase !== 'select') {
+    if (!room || room.status !== 'in-progress' || room.phase !== 'select') {
       return { success: false, error: 'Pass not available at this moment.' };
     }
 
     const player = room.players.find((p) => p.id === playerId);
     if (!player) return { success: false, error: 'Player not found.' };
+    if (player.hasFinished) return { success: false, error: 'You have already matched. Wait for the remaining players.' };
 
     if (player.hasPassed) {
       return { success: false, error: 'You already passed your card for this round.' };
@@ -866,8 +871,9 @@ export class GameEngine {
     console.log(`[PASS] Player ${player.displayName} (${playerId}) locked in their pass`);
     this.broadcastRoom(room);
 
-    // Check if ALL active connected players have submitted their pass
-    const activePlayers = room.players.filter((p) => p.connected);
+    // Matched hands are locked out of the passing ring. Disconnected players
+    // still hold cards during the reconnect grace period and are auto-passed.
+    const activePlayers = room.players.filter((p) => !p.hasFinished);
     const allPassed = activePlayers.length > 0 && activePlayers.every((p) => p.hasPassed);
 
     if (allPassed) {
@@ -883,7 +889,16 @@ export class GameEngine {
 
   private forcePassUnselectedPlayers(room: InternalRoom): void {
     for (const player of room.players) {
+      if (player.hasFinished) continue;
       if (!player.hasPassed) {
+        if (!player.selectedCardId && player.hand.length > 0) {
+          const counts = new Map<string, number>();
+          for (const card of player.hand) counts.set(card.type, (counts.get(card.type) || 0) + 1);
+          // Keep the strongest group and pass a least-common card on timeout.
+          player.selectedCardId = [...player.hand].sort(
+            (a, b) => counts.get(a.type)! - counts.get(b.type)!
+          )[0].id;
+        }
         player.hasPassed = true;
       }
     }
@@ -897,7 +912,8 @@ export class GameEngine {
    * 4. CHECK: Atomically inspect every player's hand for 4-of-a-kind.
    */
   private processPassLifecycle(room: InternalRoom): void {
-    const numPlayers = room.players.length;
+    if (room.status !== 'in-progress' || room.phase !== 'select') return;
+    const numPlayers = room.players.filter(p => !p.hasFinished).length;
     if (numPlayers < 2) return;
 
     // Phase: LOCK & TRANSFER
@@ -908,11 +924,13 @@ export class GameEngine {
     setTimeout(() => {
       const r = this.rooms.get(room.roomCode);
       if (!r || r.status !== 'in-progress') return;
+      const participants = r.players.filter(p => !p.hasFinished);
+      const numPlayers = participants.length;
 
       // Extract cards selected by all players
       const passedCards: (GameCard | null)[] = [];
       for (let i = 0; i < numPlayers; i++) {
-        const p = r.players[i];
+        const p = participants[i];
         const cardIdx = p.hand.findIndex((c) => c.id === p.selectedCardId);
         if (cardIdx !== -1) {
           passedCards[i] = p.hand.splice(cardIdx, 1)[0];
@@ -934,6 +952,12 @@ export class GameEngine {
       }
 
       const numParticipating = participatingIndices.length;
+      if (direction === 'random') {
+        for (let i = numParticipating - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [participatingIndices[i], participatingIndices[j]] = [participatingIndices[j], participatingIndices[i]];
+        }
+      }
       if (numParticipating > 1) {
         for (let i = 0; i < numParticipating; i++) {
           const giverIdx = participatingIndices[i];
@@ -959,7 +983,7 @@ export class GameEngine {
       r.transferProgress = { total: numPlayers, completed: numPlayers };
 
       for (let i = 0; i < numPlayers; i++) {
-        const player = r.players[i];
+        const player = participants[i];
         const rec = receivedCardsPerPlayer[i];
         if (rec) {
           player.hand.push(rec);
@@ -1002,7 +1026,8 @@ export class GameEngine {
   }
 
   private checkForMatchAndCollectWinner(room: InternalRoom): boolean {
-    const activePlayers = room.players.filter(p => p.connected);
+    if (room.status !== 'in-progress') return false;
+    const activePlayers = room.players;
     let newlyFinished = false;
 
     // Check all players who haven't finished yet for a 4-of-a-kind match
@@ -1013,6 +1038,8 @@ export class GameEngine {
         const isMatch = player.hand.every((c) => c.type === firstType);
         if (isMatch) {
           player.hasFinished = true;
+          player.selectedCardId = null;
+          player.hasPassed = false;
           room.finishedPlayerIds.add(player.id);
           player.matchRank = room.finishedPlayerIds.size;
           player.score += Math.max(1, activePlayers.length - player.matchRank + 1);
@@ -1029,7 +1056,7 @@ export class GameEngine {
             cardType: player.hand[0].type,
             cardName: cardDef.name,
             rank: player.matchRank,
-          } as any);
+          });
 
           // First person to match is the "round winner" for display purposes
           if (player.matchRank === 1) {
@@ -1047,13 +1074,13 @@ export class GameEngine {
       }
     }
 
-    // Check if all connected players have now finished
-    const unfinishedConnected = activePlayers.filter(p => !p.hasFinished);
-    const allDone = unfinishedConnected.length === 0 || (unfinishedConnected.length === 1 && activePlayers.length > 1);
+    // Never award an unmatched player a completion, even if only one remains.
+    const allDone = activePlayers.every(p => p.hasFinished);
 
     if (allDone && room.finishedPlayerIds.size > 0) {
-      // End the round – everyone has matched (or only 1 player remains unmatched)
+      // End the round only after every remaining participant has matched.
       room.status = 'round-ended';
+      room.passTimerRemaining = 0;
       if (room.passTimer) {
         clearInterval(room.passTimer);
         room.passTimer = undefined;
@@ -1074,7 +1101,7 @@ export class GameEngine {
             playerId: p.id,
             displayName: p.displayName,
             rank: p.hasFinished ? p.matchRank : activePlayers.length + 1,
-            status: (p.matchRank === 1 ? 'winner' : p.hasFinished ? 'completed' : 'completed') as ParticipantResult['status'],
+             status: (p.matchRank === 1 ? 'winner' : 'completed') as ParticipantResult['status'],
             cardsPassed: p.cardsPassedCount,
             cardsReceived: p.cardsReceivedCount,
             matchProgress: p.hasFinished
@@ -1123,6 +1150,7 @@ export class GameEngine {
 
     // Game continues – broadcast updated room so new rank badges are visible
     if (newlyFinished) {
+      this.broadcastPrivateStates(room);
       this.broadcastRoom(room);
     }
 

@@ -165,7 +165,7 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
           </div>
 
           <span className="font-mono text-[11px] text-slate-500">
-            Pass Count: {room.passesInRound} · Total Transfers: {room.passesInRound * room.players.length}
+            Pass Count: {room.passesInRound} · Total Cards Passed: {room.players.reduce((total, player) => total + (player.cardsPassedCount || 0), 0)}
           </span>
         </div>
       </div>

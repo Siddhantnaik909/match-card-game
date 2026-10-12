@@ -65,7 +65,7 @@ const STEPS: StepDefinition[] = [
     stepNumber: 4,
     label: 'CHECK',
     shortDesc: '4-Match Evaluation',
-    guidance: 'Server evaluates all hands for 4 identical cards to crown the winner!',
+    guidance: 'New matches take their places. Everyone keeps playing until all players match.',
     icon: Trophy,
   },
 ];

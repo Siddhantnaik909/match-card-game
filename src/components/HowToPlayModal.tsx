@@ -22,7 +22,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ isOpen, onClose 
     { title: 'PICK 1 CARD', desc: 'Select exactly one card you want to pass to the next player.' },
     { title: 'PASS', desc: 'All players pass their card simultaneously around the table.' },
     { title: 'RECEIVE', desc: 'Receive one card from your neighbor to keep your hand at 4 cards.' },
-    { title: 'CHECK FOR 4 MATCHING CARDS', desc: 'Server checks if any player holds four identical cards.' },
+    { title: 'CHECK FOR 4 MATCHING CARDS', desc: 'Each player matching four cards locks in their finish place; the rest keep playing.' },
     { title: 'FINISH & RANK', desc: 'The first player to match takes first place. Matched hands lock; everyone else keeps playing until all players match. Then the final rankings appear.' },
   ];
 

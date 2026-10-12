@@ -275,7 +275,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             </div>
             
             <h3 className="text-2xl sm:text-3xl font-black text-white">The 4-Card Passing Cycle</h3>
-            <p className="text-sm text-slate-400 mt-2">Pass one card, receive one card simultaneously. The first to hold 4 identical cards triggers the win!</p>
+            <p className="text-sm text-slate-400 mt-2">Pass cards simultaneously. Matching four locks your place while the remaining players keep playing until everyone finishes.</p>
 
             <div className="my-8 p-6 rounded-2xl bg-black/40 border border-white/5 text-center relative flex-1 flex flex-col justify-center">
               <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-6">
@@ -314,7 +314,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
             { step: '01', title: 'Deal 4 Cards', desc: 'Everyone gets 4 random cards.' },
             { step: '02', title: 'Pick 1 Card', desc: 'Select the card you do not need.' },
             { step: '03', title: 'Sync Pass', desc: 'Pass 1 card, receive 1 card.' },
-            { step: '04', title: 'Match 4', desc: 'First to 4 identical cards wins!' }
+            { step: '04', title: 'Finish & Rank', desc: 'First to match takes first place. The game ends after everyone matches.' }
           ].map((s, i) => (
             <div key={s.step} className={`md:col-span-3 p-6 sm:p-8 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-both ${bentoBoxClass}`} style={{animationDelay: `${300 + (i * 100)}ms`}}>
               <div className="w-12 h-12 rounded-xl bg-white/5 text-amber-400 flex items-center justify-center font-mono font-black text-xl mb-4 border border-white/10 shadow-[0_0_15px_rgba(251,191,36,0.1)]">

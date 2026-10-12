@@ -58,7 +58,7 @@ export const GameSelectorModal: React.FC<GameSelectorModalProps> = ({
 
               <h3 className="text-xl font-extrabold text-white">MATCH &amp; COLLECT</h3>
               <p className="text-sm text-slate-300 mt-2 font-medium">
-                Pass cards. Build a collection. Be the first to collect 4 identical cards.
+                 Pass cards and build a collection. Match four to secure your place; play continues until everyone matches.
               </p>
 
               <div className="mt-5 space-y-2 text-xs text-slate-300">
@@ -72,7 +72,7 @@ export const GameSelectorModal: React.FC<GameSelectorModalProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>First to match 4 identical cards wins instantly</span>
+                   <span>First to match four takes first place; everyone else keeps playing</span>
                 </div>
               </div>
             </div>

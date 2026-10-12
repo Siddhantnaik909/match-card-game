@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --import tsx/esm server.ts",
     "start": "node --import tsx/esm server.ts",
+    "test": "node --import tsx/esm --test server/gameEngine.test.ts",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",

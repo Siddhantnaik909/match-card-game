@@ -126,9 +126,11 @@ export class GameEngine {
 
   constructor() {
     // Periodically clean up stale/abandoned rooms
-    setInterval(() => this.cleanupAbandonedRooms(), 60000);
+    const cleanupTimer = setInterval(() => this.cleanupAbandonedRooms(), 60000);
+    cleanupTimer.unref();
     // Periodically process matchmaking queue
-    setInterval(() => this.processMatchmaking(), 2000);
+    const matchmakingTimer = setInterval(() => this.processMatchmaking(), 2000);
+    matchmakingTimer.unref();
   }
 
   // --- MATCHMAKING SYSTEM ---
@@ -1132,7 +1134,7 @@ export class GameEngine {
           detail: `Collected 4 ${cardDef.name} cards in ${room.passesInRound} passes!`,
           durationMs: duration,
           totalRounds: room.currentRound,
-          totalCardsTransferred: room.passesInRound * room.players.length,
+          totalCardsTransferred: room.players.reduce((total, player) => total + player.cardsPassedCount, 0),
           completedAt: new Date().toISOString(),
           participants: sortedParticipants,
         });
@@ -1476,7 +1478,9 @@ export class GameEngine {
       let status: PublicPlayer['status'] = 'idle';
 
       if (room.status === 'in-progress') {
-        if (room.winner && room.winner.playerId === p.id) {
+        if (p.hasFinished) {
+          status = p.matchRank === 1 ? 'winner' : 'completed';
+        } else if (room.winner && room.winner.playerId === p.id) {
           status = 'winner';
         } else if (room.phase === 'transfer') {
           status = 'passing';

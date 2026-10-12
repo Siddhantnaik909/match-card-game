@@ -70,6 +70,7 @@ const ARENA_STEPS: StepDefinition[] = [
 export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) => {
   const players = room.players;
   const numPlayers = players.length;
+  const remainingPlayerCount = players.filter((player) => !player.hasFinished).length;
   const currentPhase: GamePhase = room.phase || 'select';
   const passTimer = room.passTimerRemaining ?? 12;
   const totalTimer = room.settings.passTimerSeconds || 12;
@@ -132,7 +133,7 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
 
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-semibold text-slate-300">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="font-mono">{numPlayers} Players In Arena</span>
+            <span className="font-mono">{remainingPlayerCount} Players Still Playing</span>
           </div>
         </div>
 
@@ -257,7 +258,7 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
                   <span className="text-amber-400 animate-pulse">Evaluating 4-of-a-kind...</span>
                 ) : (
                   <span className="text-amber-300">
-                    {passedCount} / {numPlayers} Locked In
+                    {passedCount} / {remainingPlayerCount} Locked In
                   </span>
                 )}
               </div>
@@ -275,7 +276,7 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-300 font-bold">Lock-In Progress</span>
               <span className="font-mono text-amber-400 font-black">
-                {Math.round((passedCount / Math.max(1, numPlayers)) * 100)}%
+                {Math.round((passedCount / Math.max(1, remainingPlayerCount)) * 100)}%
               </span>
             </div>
 
@@ -283,15 +284,15 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
               <div
                 className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(251,191,36,0.5)]"
                 style={{
-                  width: `${Math.round((passedCount / Math.max(1, numPlayers)) * 100)}%`,
+                  width: `${Math.round((passedCount / Math.max(1, remainingPlayerCount)) * 100)}%`,
                 }}
               />
             </div>
 
             <p className="text-[11px] text-slate-400 leading-tight">
-              {passedCount === numPlayers
-                ? 'All players locked in. Instant transfer initiated!'
-                : `${numPlayers - passedCount} player(s) currently selecting their card to pass.`}
+              {passedCount === remainingPlayerCount
+                ? 'All active players locked in. Cards are passing!'
+                : `${remainingPlayerCount - passedCount} player(s) still need to pass.`}
             </p>
           </div>
         </div>
@@ -387,7 +388,7 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
         <div className="flex items-center justify-between mb-2.5 text-xs">
           <span className="uppercase font-black tracking-wider text-slate-300 flex items-center gap-1.5">
             <span>Arena Combatants</span>
-            <span className="text-slate-500 font-normal">({numPlayers} Connected)</span>
+            <span className="text-slate-500 font-normal">({remainingPlayerCount} still playing · {numPlayers} total)</span>
           </span>
           <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
             Simultaneous 4-card equilibrium
@@ -404,7 +405,9 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
               <div
                 key={p.id}
                 className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs transition-all ${
-                  isMe
+                  p.hasFinished
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                    : isMe
                     ? 'bg-amber-500/20 border-amber-400 text-white shadow-sm ring-1 ring-amber-400/40'
                     : hasPicked
                     ? 'bg-slate-900/90 border-slate-700/80 text-slate-200'
@@ -414,7 +417,9 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
                 {/* Status Dot */}
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    !p.connected
+                    p.hasFinished
+                      ? 'bg-emerald-400'
+                      : !p.connected
                       ? 'bg-rose-500'
                       : hasPicked
                       ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
@@ -425,7 +430,9 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
                 {/* Initial */}
                 <span
                   className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black ${
-                    isMe
+                    p.hasFinished
+                      ? 'bg-emerald-700 text-white'
+                      : isMe
                       ? 'bg-amber-400 text-slate-950'
                       : p.isHost
                       ? 'bg-blue-500 text-white'
@@ -440,13 +447,17 @@ export const GameArena: React.FC<GameArenaProps> = ({ room, currentPlayerId }) =
                   {p.displayName} {isMe && '(You)'}
                 </span>
 
+                {p.hasFinished && (
+                  <span className="text-[10px] font-black text-emerald-300">#{p.matchRank} MATCHED</span>
+                )}
+
                 {/* Lock icon if ready */}
-                {hasPicked && (
+                {!p.hasFinished && hasPicked && (
                   <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 )}
 
                 {/* Host crown */}
-                {p.isHost && (
+                {p.isHost && !p.hasFinished && (
                   <Crown className="w-3 h-3 text-amber-400 shrink-0" />
                 )}
               </div>

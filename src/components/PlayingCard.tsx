@@ -118,7 +118,7 @@ export const PlayingCard: React.FC<PlayingCardProps> = ({
       style={{
         animationDelay: `${dealIndex * 70}ms`,
       }}
-      className={`relative group text-left select-none rounded-2xl border transition-all duration-300 transform outline-none ${
+      className={`relative group text-left select-none rounded-2xl border transition-all duration-300 transform outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300 ${
         isSelected
           ? '-translate-y-4 scale-[1.03] ring-4 ring-amber-400 ring-offset-2 ring-offset-slate-950 border-amber-400 shadow-[0_0_35px_rgba(251,191,36,0.45)] z-20'
           : 'border-slate-800 hover:border-slate-600 hover:-translate-y-2 hover:shadow-xl shadow-lg z-10'

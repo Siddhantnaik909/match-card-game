@@ -42,15 +42,55 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
   const hasPassed = Boolean(me?.hasPassed);
   const hasFinished = Boolean(me?.hasFinished);
   const remainingPlayers = room.players.filter(p => !p.hasFinished).length;
+  const passedPlayers = room.players.filter(p => !p.hasFinished && p.hasPassed).length;
   const currentPhase = room.phase || 'select';
+  const mobilePhaseLabel =
+    currentPhase === 'select' ? 'Choose a card'
+      : currentPhase === 'transfer' ? 'Passing cards'
+      : currentPhase === 'receive' ? 'Cards received'
+      : 'Checking matches';
 
   const selectedCard = hand.find((c) => c.id === selectedCardId);
   const selectedDef = selectedCard ? getCardDef(selectedCard.type) : null;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 flex flex-col gap-6 select-none animate-fadeIn">
-      {/* 1. Unified Combat Arena HUD (Table Ring, Timer, Step Tracker, Opponent Roster) */}
-      <GameArena room={room} currentPlayerId={privatePlayer?.id || ''} />
+      {/* Keep the active turn visible without the full desktop arena on phones and tablets. */}
+      <div
+        className="lg:hidden sticky top-20 z-30 -mx-1 flex items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur-md"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+            <span className="text-amber-300">ROUND {room.currentRound}</span>
+            <span className="text-slate-600" aria-hidden="true">/</span>
+            <span aria-live="polite">{remainingPlayers} still playing</span>
+          </div>
+          <div aria-live="polite" className="mt-1 truncate text-sm font-semibold text-white">{mobilePhaseLabel}</div>
+          {currentPhase === 'select' && (
+            <div className="mt-0.5 text-[11px] text-slate-400">{passedPlayers} of {remainingPlayers} locked in</div>
+          )}
+        </div>
+
+        <div
+          className={`shrink-0 rounded-xl border px-3 py-2 text-center ${
+            currentPhase === 'select' && (room.passTimerRemaining ?? 12) <= 3
+              ? 'border-rose-400/50 bg-rose-500/10 text-rose-300'
+              : 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+          }`}
+        >
+          <div className="text-[9px] font-bold uppercase tracking-wider opacity-75">
+            {currentPhase === 'select' ? 'Pass in' : 'Pass'}
+          </div>
+          <div className="font-mono text-xl font-black leading-tight">
+            {currentPhase === 'select' ? `${Math.ceil(room.passTimerRemaining ?? room.settings.passTimerSeconds)}s` : '…'}
+          </div>
+        </div>
+      </div>
+
+      {/* Full table arena stays on wide screens; the compact turn bar above serves smaller screens. */}
+      <div className="hidden lg:block">
+        <GameArena room={room} currentPlayerId={privatePlayer?.id || ''} />
+      </div>
 
       {/* 2. Primary Gameplay Priority: Player Hand Deck */}
       <div className="relative rounded-3xl bg-gradient-to-b from-[#11182c] via-[#0b101c] to-[#070a13] border border-slate-800 p-5 sm:p-7 shadow-2xl overflow-hidden">
@@ -108,7 +148,7 @@ export const MatchCollectBoard: React.FC<MatchCollectBoardProps> = ({
             <button
               onClick={onPassCard}
               disabled={hasFinished || !hasSelected || hasPassed || currentPhase !== 'select'}
-              className={`w-full sm:w-auto min-h-[48px] px-8 py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all transform duration-200 ${
+              className={`w-full sm:w-auto min-h-[48px] px-8 py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all transform duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
                 hasPassed || hasFinished
                   ? 'bg-slate-800/90 text-slate-400 cursor-not-allowed border border-slate-700/60'
                   : hasSelected
